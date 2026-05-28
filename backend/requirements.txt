@@ -1,0 +1,51 @@
+# Core Framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.4
+pydantic-settings==2.3.1
+
+# Database & ORM
+SQLAlchemy==2.0.30
+asyncpg==0.29.0
+alembic==1.13.1
+
+# Redis & Messaging
+redis==5.0.4
+
+# HTTP & Async
+aiohttp>=3.9.0
+httpx==0.27.0
+aiofiles==24.1.0
+watchfiles==0.21.0
+
+# Security & Auth
+python-jose[cryptography]==3.3.0
+passlib[argon2]==1.7.4
+argon2-cffi==23.1.0
+
+# WebSockets
+websockets==12.0
+
+# Logging & Metrics
+structlog==24.2.0
+prometheus-client==0.20.0
+python-dotenv==1.0.0
+sentry-sdk[fastapi]==1.42.0
+
+# Wazuh Integration
+requests>=2.31.0
+python-dateutil>=2.8.2
+
+# GeoIP Support
+geoip2>=4.7.0
+maxminddb>=2.6.0
+
+# Other Utilities
+python-multipart==0.0.9
+
+# Testing
+pytest==8.2.1
+pytest-asyncio==0.23.7
+pytest-cov==4.1.0
+pytest-mock==3.14.0
+faker==25.2.0

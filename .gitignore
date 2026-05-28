@@ -1,0 +1,149 @@
+# ==========================================
+# Environment Variables (NEVER COMMIT)
+# ==========================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.production.local
+.env.development
+
+# ==========================================
+# Secret & Configuration Files
+# ==========================================
+ssl/
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+secrets.yml
+secrets.json
+
+# ==========================================
+# Database & Data Files
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+/db_backups/*
+backups/
+*.sql
+*.dump
+
+# ==========================================
+# Dependencies
+# ==========================================
+node_modules/
+venv/
+env/
+.venv/
+ENV/
+/backend/venv/
+/frontend/node_modules/
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+
+# ==========================================
+# IDE & Editor Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.env.local
+*.sublime-workspace
+*.sublime-project
+
+# ==========================================
+# IDE & Editor Files (Visual Studio)
+# ==========================================
+.vs/
+*.user
+*.userprefs
+bin/
+obj/
+.nuget/
+
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+Thumbs.db
+*.log
+*.logs
+
+# ==========================================
+# Docker Files
+# ==========================================
+docker_volumes/
+postgres_data/
+redis_data/
+opensearch_data/
+.docker
+
+# ==========================================
+# Build & Production Files
+# ==========================================
+/frontend/dist/
+/frontend/.next/
+/frontend/out/
+.next/
+.vercel/
+.netlify/
+
+# ==========================================
+# Testing
+# ==========================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+pytest.ini
+coverage.xml
+*.cover
+*.log
+
+# ==========================================
+# Local Development
+# ==========================================
+.env.local
+.env.test.local
+local_settings.py
+/backend/uploads/
+temp/
+tmp/
+
+# ==========================================
+# Nginx & SSL Logs
+# ==========================================
+nginx_logs/
+var/log/
+logs/
+
+# ==========================================
+# IDE Specific
+# ==========================================
+.pylintrc
+.flake8
+.mypy.ini
+
+# ==========================================
+# Keep tracking important templates
+# ==========================================
+!.env.example
+!.env.development
+!.env.production
