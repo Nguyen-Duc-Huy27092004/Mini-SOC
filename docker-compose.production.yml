@@ -6,6 +6,7 @@ services:
     image: postgres:16-alpine
     container_name: mini_soc_db_prod
     restart: always
+    env_file: .env.production
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -28,13 +29,15 @@ services:
     image: redis:7-alpine
     container_name: mini_soc_redis_prod
     restart: always
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    env_file: .env.production
+    entrypoint: /bin/sh
+    command: -c 'redis-server --appendonly yes --requirepass $${REDIS_PASSWORD}'
     volumes:
       - redis_data_prod:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +55,19 @@ services:
       ENV: production
       DEBUG: "false"
       POSTGRES_SERVER: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB}
+      SECRET_KEY: ${SECRET_KEY}
+      WAZUH_API_URL: ${WAZUH_API_URL}
+      WAZUH_API_USER: ${WAZUH_API_USER}
+      WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD}
+      WAZUH_VERIFY_SSL: ${WAZUH_VERIFY_SSL}
       WAZUH_ALERTS_FILE: /var/ossec/logs/alerts/alerts.json
     volumes:
       - ${WAZUH_ALERTS_HOST_PATH:-./data/wazuh}:/var/ossec/logs/alerts:ro
@@ -61,6 +76,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/ready"]
       interval: 30s
@@ -75,10 +92,13 @@ services:
       context: ./frontend
       dockerfile: ../docker/frontend.Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL}
-        VITE_WS_URL: ${VITE_WS_URL}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:2709/api/v1}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:2709/ws}
     container_name: mini_soc_frontend_prod
     restart: always
+    env_file: .env.production
+    ports:
+      - "3000:3000"
     networks:
       - soc_network
 
@@ -86,6 +106,7 @@ services:
     image: nginx:stable-alpine
     container_name: mini_soc_nginx_prod
     restart: always
+    env_file: .env.production
     ports:
       - "2709:80"
       - "443:443"
@@ -96,6 +117,11 @@ services:
     depends_on:
       - frontend
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/api/v1/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - soc_network
 

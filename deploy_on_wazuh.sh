@@ -330,6 +330,29 @@ echo "  - Wazuh API: $WAZUH_API_URL"
 echo "  - Server Access: http://$SERVER_IP:$NGINX_PORT"
 echo ""
 
+# Verify .env.production was created successfully
+if [ ! -f ".env.production" ]; then
+    log_error ".env.production file was not created!"
+    exit 1
+fi
+
+# Verify critical variables in .env.production
+log_info "Verifying .env.production content..."
+if ! grep -q "POSTGRES_PASSWORD=" .env.production; then
+    log_error "POSTGRES_PASSWORD not found in .env.production"
+    exit 1
+fi
+if ! grep -q "REDIS_PASSWORD=" .env.production; then
+    log_error "REDIS_PASSWORD not found in .env.production"
+    exit 1
+fi
+if ! grep -q "SECRET_KEY=" .env.production; then
+    log_error "SECRET_KEY not found in .env.production"
+    exit 1
+fi
+log_success "All required variables verified in .env.production"
+echo ""
+
 # ============================================================
 # CHECK WAZUH ALERTS FILE
 # ============================================================
@@ -358,6 +381,10 @@ echo ""
 # ============================================================
 
 log_info "Building Docker images (this may take 5-10 minutes)..."
+log_info "Using .env.production from: $PWD/.env.production"
+
+# Export environment variables to be used by docker-compose
+export $(cat .env.production | grep -v '^#' | xargs)
 
 docker-compose -f docker-compose.production.yml build --no-cache backend
 log_success "Backend image built"
@@ -372,6 +399,14 @@ echo ""
 # ============================================================
 
 log_info "Starting services..."
+log_info "Docker Compose will load environment from: .env.production"
+
+# Verify docker-compose can see the env file
+if ! docker-compose -f docker-compose.production.yml config &> /dev/null; then
+    log_error "Docker compose configuration error. Check .env.production format"
+    docker-compose -f docker-compose.production.yml config
+    exit 1
+fi
 
 docker-compose -f docker-compose.production.yml up -d
 
@@ -392,10 +427,36 @@ docker-compose -f docker-compose.production.yml ps
 
 echo ""
 
+# Verify environment variables are loaded in containers
+log_info "Checking environment variables in containers..."
+
+log_info "Checking backend environment variables..."
+if docker-compose -f docker-compose.production.yml exec -T backend env | grep -q "POSTGRES_PASSWORD"; then
+    log_success "✓ Environment variables loaded in backend"
+else
+    log_warn "⚠ Could not verify environment variables in backend (container may still be starting)"
+fi
+
+log_info "Checking database connection..."
+if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
+    log_success "✓ PostgreSQL is ready"
+else
+    log_warn "⚠ PostgreSQL not ready yet"
+fi
+
+log_info "Checking Redis connection..."
+if docker-compose -f docker-compose.production.yml exec -T redis redis-cli ping &> /dev/null; then
+    log_success "✓ Redis is ready"
+else
+    log_warn "⚠ Redis not ready yet"
+fi
+
+echo ""
+
 # Health check
 log_info "Running health checks..."
 
-if curl -s http://localhost/api/v1/health/ready > /dev/null; then
+if curl -s http://localhost:8000/api/v1/health/ready > /dev/null; then
     log_success "Backend health check passed"
 else
     log_warn "Backend health check failed (it may still be starting)"
