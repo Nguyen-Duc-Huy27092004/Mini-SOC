@@ -98,7 +98,7 @@ services:
     restart: always
     env_file: .env.production
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - soc_network
 
