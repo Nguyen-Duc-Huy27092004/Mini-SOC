@@ -99,8 +99,8 @@ read -p "Enter deployment path (default: /opt/mini-soc): " DEPLOY_PATH
 DEPLOY_PATH=${DEPLOY_PATH:-/opt/mini-soc}
 
 # Get port
-read -p "Enter Nginx port (default: 2709): " NGINX_PORT
-NGINX_PORT=${NGINX_PORT:-2709}
+read -p "Enter Nginx port (default: 0908): " NGINX_PORT
+NGINX_PORT=${NGINX_PORT:-0908}
 
 # Check if port is available
 if netstat -tlnp 2>/dev/null | grep -q ":$NGINX_PORT "; then
