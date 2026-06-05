@@ -177,9 +177,30 @@ log_info "Configuring docker-compose.production.yml..."
 # Backup original
 cp docker-compose.production.yml docker-compose.production.yml.bak
 
-# Update port mapping
-sed -i "s/- \"80:80\"/- \"$NGINX_PORT:80\"/g" docker-compose.production.yml
-sed -i "s/- \"443:443\"/- \"$NGINX_PORT:443\"/g" docker-compose.production.yml || true
+# Update port mapping using Python for reliable YAML modification
+python3 << 'PYTHON_EOF'
+import yaml
+import sys
+
+try:
+    with open('docker-compose.production.yml', 'r') as f:
+        compose = yaml.safe_load(f)
+    
+    # Update nginx ports
+    if 'services' in compose and 'nginx' in compose['services']:
+        compose['services']['nginx']['ports'] = [
+            f"${NGINX_PORT}:80",
+            "127.0.0.1:443:443"  # Keep 443 on localhost only
+        ]
+    
+    with open('docker-compose.production.yml', 'w') as f:
+        yaml.safe_dump(compose, f, default_flow_style=False)
+    
+    print("✓ docker-compose.production.yml updated with ports")
+except Exception as e:
+    print(f"✗ Error updating compose file: {e}", file=sys.stderr)
+    sys.exit(1)
+PYTHON_EOF
 
 log_success "docker-compose.production.yml configured"
 echo ""
@@ -374,6 +395,21 @@ else
     log_info "Mini-SOC will try to use Wazuh API instead"
 fi
 
+echo ""
+
+# ============================================================
+# CLEANUP OLD CONTAINERS
+# ============================================================
+
+log_info "Cleaning up old containers and images..."
+
+# Stop and remove old containers
+docker-compose -f docker-compose.production.yml down -v 2>/dev/null || true
+
+# Remove dangling images
+docker image prune -f --filter "dangling=true" || true
+
+log_success "Cleanup complete"
 echo ""
 
 # ============================================================

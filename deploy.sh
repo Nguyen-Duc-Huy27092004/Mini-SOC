@@ -52,14 +52,19 @@ dev_logs() {
 # Production commands
 prod_up() {
     print_header "Starting Production Services"
-    if [ ! -f ".env" ]; then
-        print_error ".env file not found!"
-        print_warning "Copy from .env.production and configure it"
+    if [ ! -f ".env.production" ]; then
+        print_error ".env.production file not found!"
+        print_warning "Run: $0 setup-prod"
         return 1
     fi
+    
+    # Cleanup old containers to avoid port conflicts
+    print_warning "Cleaning up old containers..."
+    docker-compose -f $COMPOSE_PROD down -v 2>/dev/null || true
+    
     docker-compose -f $COMPOSE_PROD up -d
     print_success "Services started in production mode"
-    print_warning "VERIFY: curl https://yourdomain.com/api/v1/health"
+    print_warning "VERIFY: curl http://localhost:${NGINX_PORT:-2709}/api/v1/health"
 }
 
 prod_down() {
