@@ -92,8 +92,8 @@ services:
       context: ./frontend
       dockerfile: ../docker/frontend.Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:0908/api/v1}
-        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:0908/ws}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:2709/api/v1}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:2709/ws}
     container_name: mini_soc_frontend_prod
     restart: always
     env_file: .env.production
@@ -108,7 +108,7 @@ services:
     restart: always
     env_file: .env.production
     ports:
-      - "0908:80"
+      - "2709:80"
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
