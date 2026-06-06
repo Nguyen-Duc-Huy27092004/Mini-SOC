@@ -58,13 +58,17 @@ prod_up() {
         return 1
     fi
     
+    # Load environment variables from .env.production
+    export $(grep -v '^#' .env.production | xargs)
+    NGINX_PORT=${NGINX_PORT:-2709}
+    
     # Cleanup old containers to avoid port conflicts
     print_warning "Cleaning up old containers..."
     docker-compose -f $COMPOSE_PROD down -v 2>/dev/null || true
     
     docker-compose -f $COMPOSE_PROD up -d
     print_success "Services started in production mode"
-    print_warning "VERIFY: curl http://localhost:${NGINX_PORT:-2709}/api/v1/health"
+    print_warning "VERIFY: curl http://localhost:${NGINX_PORT}/api/v1/health"
 }
 
 prod_down() {
