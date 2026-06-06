@@ -37,7 +37,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -98,7 +98,7 @@ services:
     restart: always
     env_file: .env.production
     ports:
-      - "3001:3000"
+      - "3001:80"
     networks:
       - soc_network
 

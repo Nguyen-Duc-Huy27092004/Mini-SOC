@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,8 @@ from pydantic import (
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
 )
 
 ENV_TYPES = Literal[
@@ -38,6 +41,31 @@ def parse_json_list(value: str | list[str]) -> list[str]:
     return [x.strip() for x in value.split(",")]
 
 
+class SafeEnvSettingsSource(EnvSettingsSource):
+    """Custom environment source that handles empty list fields gracefully."""
+    
+    def decode_complex_value(
+        self,
+        field_name: str,
+        field,
+        value: str,
+    ):
+        """Override to handle empty strings for list fields."""
+        # For list fields, handle empty strings before JSON parsing
+        if hasattr(field, 'annotation') and 'list' in str(field.annotation):
+            if not value or not value.strip():
+                return None  # Let Pydantic use the default
+        
+        # For other complex types, use the default decoder
+        try:
+            return super().decode_complex_value(field_name, field, value)
+        except json.JSONDecodeError:
+            # If JSON parsing fails for list fields, return empty list
+            if hasattr(field, 'annotation') and 'list' in str(field.annotation):
+                return None
+            raise
+
+
 class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
@@ -47,7 +75,25 @@ class Settings(BaseSettings):
         case_sensitive=True,
         validate_default=True,
         frozen=True,
+        json_file=None,
     )
+    
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        """Customize settings sources to use our safe env source."""
+        return (
+            init_settings,
+            SafeEnvSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     # =========================================================
     # CORE

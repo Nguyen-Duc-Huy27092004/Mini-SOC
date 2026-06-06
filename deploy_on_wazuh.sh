@@ -181,34 +181,8 @@ log_info "Configuring docker-compose.production.yml..."
 # Backup original
 cp docker-compose.production.yml docker-compose.production.yml.bak
 
-# Update port mapping using Python for reliable YAML modification
-python3 << 'PYTHON_EOF'
-import yaml
-import sys
-
-try:
-    with open('docker-compose.production.yml', 'r') as f:
-        compose = yaml.safe_load(f)
-    
-    # Get NGINX_PORT from environment
-    import os
-    nginx_port = os.environ.get('NGINX_PORT', '2709')
-    
-    # Update nginx ports
-    if 'services' in compose and 'nginx' in compose['services']:
-        compose['services']['nginx']['ports'] = [
-            f"{nginx_port}:80",
-            "127.0.0.1:443:443"  # Keep 443 on localhost only
-        ]
-    
-    with open('docker-compose.production.yml', 'w') as f:
-        yaml.safe_dump(compose, f, default_flow_style=False)
-    
-    print("✓ docker-compose.production.yml updated with ports")
-except Exception as e:
-    print(f"✗ Error updating compose file: {e}", file=sys.stderr)
-    sys.exit(1)
-PYTHON_EOF
+# docker-compose.production.yml already uses ${NGINX_PORT:-2709} parameterization.
+# No need to rewrite the YAML file.
 
 log_success "docker-compose.production.yml configured"
 echo ""
@@ -255,9 +229,9 @@ WS_RATE_LIMIT_PER_MINUTE=120
 BACKEND_CORS_ORIGINS=http://$SERVER_IP:$NGINX_PORT,http://localhost:$NGINX_PORT,http://127.0.0.1:$NGINX_PORT
 
 # Cookie Security
-COOKIE_SECURE=true
-COOKIE_DOMAIN=$SERVER_IP
-CSRF_VALIDATE_ORIGIN=true
+COOKIE_SECURE=false
+COOKIE_DOMAIN=
+CSRF_VALIDATE_ORIGIN=false
 
 # Default Admin Password (CHANGE AFTER FIRST LOGIN)
 DEFAULT_ADMIN_PASSWORD=ChangeMe123!
@@ -341,6 +315,8 @@ WORKERS=4
 # =========================================================
 # DEPLOYMENT INFO
 # =========================================================
+
+NGINX_PORT=$NGINX_PORT
 
 # Deployed at: $DEPLOY_PATH
 # Nginx Port: $NGINX_PORT
@@ -428,7 +404,9 @@ log_info "Building Docker images (this may take 5-10 minutes)..."
 log_info "Using .env.production from: $PWD/.env.production"
 
 # Export environment variables to be used by docker-compose
-export $(cat .env.production | grep -v '^#' | xargs)
+set -a
+source .env.production
+set +a
 
 docker-compose -f docker-compose.production.yml build --no-cache backend
 log_success "Backend image built"
@@ -506,12 +484,21 @@ else
     log_warn "Backend health check failed (it may still be starting)"
 fi
 
-if curl -s http://localhost > /dev/null; then
+if curl -s http://localhost:$NGINX_PORT > /dev/null; then
     log_success "Frontend is accessible"
 else
     log_warn "Frontend not responding yet (it may still be starting)"
 fi
 
+echo ""
+
+# ============================================================
+# DATABASE MIGRATIONS
+# ============================================================
+
+log_info "Running database migrations..."
+docker-compose -f docker-compose.production.yml exec -T backend alembic upgrade head
+log_success "Database migrations completed"
 echo ""
 
 # ============================================================
@@ -529,11 +516,10 @@ read -sp "Enter admin password: " ADMIN_PASSWORD
 echo ""
 
 docker-compose -f docker-compose.production.yml exec -T backend \
-    python app/scripts/create_admin_user.py << EOF
-$ADMIN_USER
-$ADMIN_EMAIL
-$ADMIN_PASSWORD
-EOF
+    python app/scripts/create_admin_user.py \
+    --user "$ADMIN_USER" \
+    --email "$ADMIN_EMAIL" \
+    --password "$ADMIN_PASSWORD"
 
 log_success "Admin user created"
 echo ""
@@ -550,7 +536,7 @@ echo "==========================================================="
 echo ""
 echo -e "${GREEN}📍 Access URLs:${NC}"
 echo "  Web UI:           http://$SERVER_IP:$NGINX_PORT"
-echo "  API Documentation: http://$SERVER_IP:$NGINX_PORT/api/v1/docs"
+echo "  API Documentation: http://$SERVER_IP:$NGINX_PORT/api/v1/docs (If DEBUG=true)"
 echo "  Health Check:     http://$SERVER_IP:$NGINX_PORT/api/v1/health/ready"
 echo ""
 echo -e "${GREEN}👤 Credentials:${NC}"

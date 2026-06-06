@@ -20,7 +20,7 @@ from sqlalchemy.future import select
 import uuid
 
 
-async def create_admin():
+async def create_admin(admin_email: str, admin_password: str, admin_user: str = "System Administrator"):
     """Create admin user and roles."""
     
     # Create tables if they don't exist
@@ -57,9 +57,6 @@ async def create_admin():
         
         await session.commit()
         
-        # Create admin user
-        admin_email = "admin@soc.com"
-        
         # Check if admin already exists
         stmt = select(User).where(User.email == admin_email)
         existing_admin = await session.execute(stmt)
@@ -73,8 +70,8 @@ async def create_admin():
         admin = User(
             id=uuid.uuid4(),
             email=admin_email,
-            hashed_password=await hash_password(settings.DEFAULT_ADMIN_PASSWORD),
-            full_name="System Administrator",
+            hashed_password=await hash_password(admin_password),
+            full_name=admin_user,
             is_active=True,
             must_change_password=True,
         )
@@ -86,13 +83,19 @@ async def create_admin():
         await session.commit()
         
         print(f"✓ Created admin user: {admin_email}")
-        print(f"✓ Temporary password: {settings.DEFAULT_ADMIN_PASSWORD}")
+        print(f"✓ Temporary password: {admin_password}")
         print("⚠️  IMPORTANT: Admin must change password on first login!")
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="Create initial admin user")
+    parser.add_argument("--email", required=True, help="Admin email address")
+    parser.add_argument("--password", required=True, help="Admin password")
+    parser.add_argument("--user", default="System Administrator", help="Admin full name")
+    args = parser.parse_args()
+
     try:
-        await create_admin()
+        await create_admin(args.email, args.password, args.user)
         print("\n✅ Admin user creation completed successfully!")
     except Exception as e:
         print(f"❌ Error: {str(e)}")
