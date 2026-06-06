@@ -103,7 +103,9 @@ services:
       - soc_network
 
   nginx:
-    image: nginx:stable-alpine
+    build:
+      context: .
+      dockerfile: docker/nginx.Dockerfile
     container_name: mini_soc_nginx_prod
     restart: always
     env_file: .env.production
