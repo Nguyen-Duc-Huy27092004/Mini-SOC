@@ -128,6 +128,10 @@ DB_PASSWORD=$(openssl rand -base64 32)
 REDIS_PASSWORD=$(openssl rand -base64 32)
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 
+# Export variables for Python subprocess
+export NGINX_PORT DB_PASSWORD REDIS_PASSWORD SECRET_KEY
+export SERVER_IP WAZUH_API_URL WAZUH_USER WAZUH_PASSWORD
+
 log_success "Configuration generated"
 echo ""
 
@@ -186,10 +190,14 @@ try:
     with open('docker-compose.production.yml', 'r') as f:
         compose = yaml.safe_load(f)
     
+    # Get NGINX_PORT from environment
+    import os
+    nginx_port = os.environ.get('NGINX_PORT', '2709')
+    
     # Update nginx ports
     if 'services' in compose and 'nginx' in compose['services']:
         compose['services']['nginx']['ports'] = [
-            f"${NGINX_PORT}:80",
+            f"{nginx_port}:80",
             "127.0.0.1:443:443"  # Keep 443 on localhost only
         ]
     
