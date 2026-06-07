@@ -204,119 +204,119 @@ cat > .env.production << EOF
 # CORE SETTINGS
 # =========================================================
 
-PROJECT_NAME=Mini SOC Portal
-ENV=production
-DEBUG=false
-API_V1_STR=/api/v1
-LOG_LEVEL=INFO
+PROJECT_NAME="Mini SOC Portal"
+ENV="production"
+DEBUG="false"
+API_V1_STR="/api/v1"
+LOG_LEVEL="INFO"
 
 # =========================================================
 # SECURITY
 # =========================================================
 
 # JWT Configuration
-SECRET_KEY=$SECRET_KEY
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=7
-WS_TICKET_EXPIRE_SECONDS=60
+SECRET_KEY="$SECRET_KEY"
+ACCESS_TOKEN_EXPIRE_MINUTES="15"
+REFRESH_TOKEN_EXPIRE_DAYS="7"
+WS_TICKET_EXPIRE_SECONDS="60"
 
 # Rate Limiting
-LOGIN_RATE_LIMIT_PER_MINUTE=10
-RATE_LIMIT_PER_MINUTE=100
-WS_RATE_LIMIT_PER_MINUTE=120
+LOGIN_RATE_LIMIT_PER_MINUTE="10"
+RATE_LIMIT_PER_MINUTE="100"
+WS_RATE_LIMIT_PER_MINUTE="120"
 
 # CORS Configuration
-BACKEND_CORS_ORIGINS=http://$SERVER_IP:$NGINX_PORT,http://localhost:$NGINX_PORT,http://127.0.0.1:$NGINX_PORT
+BACKEND_CORS_ORIGINS="http://$SERVER_IP:$NGINX_PORT,http://localhost:$NGINX_PORT,http://127.0.0.1:$NGINX_PORT"
 
 # Cookie Security
-COOKIE_SECURE=false
-COOKIE_DOMAIN=
-CSRF_VALIDATE_ORIGIN=false
+COOKIE_SECURE="false"
+COOKIE_DOMAIN=""
+CSRF_VALIDATE_ORIGIN="false"
 
 # Default Admin Password (CHANGE AFTER FIRST LOGIN)
-DEFAULT_ADMIN_PASSWORD=ChangeMe123!
+DEFAULT_ADMIN_PASSWORD="ChangeMe123!"
 
 # =========================================================
 # DATABASE (PostgreSQL)
 # =========================================================
 
-POSTGRES_SERVER=db
-POSTGRES_PORT=5432
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=$DB_PASSWORD
-POSTGRES_DB=mini_soc_prod
+POSTGRES_SERVER="db"
+POSTGRES_PORT="5432"
+POSTGRES_USER="postgres"
+POSTGRES_PASSWORD="$DB_PASSWORD"
+POSTGRES_DB="mini_soc_prod"
 
 # Database Connection Pool
-DB_POOL_SIZE=20
-DB_MAX_OVERFLOW=40
-DB_POOL_TIMEOUT=30
-DB_POOL_RECYCLE=1800
+DB_POOL_SIZE="20"
+DB_MAX_OVERFLOW="40"
+DB_POOL_TIMEOUT="30"
+DB_POOL_RECYCLE="1800"
 
 # =========================================================
 # REDIS
 # =========================================================
 
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_PASSWORD=$REDIS_PASSWORD
-REDIS_DB=0
+REDIS_HOST="redis"
+REDIS_PORT="6379"
+REDIS_PASSWORD="$REDIS_PASSWORD"
+REDIS_DB="0"
 
 # =========================================================
 # OPENSEARCH
 # =========================================================
 
-OPENSEARCH_HOSTS=https://opensearch:9200
-OPENSEARCH_USER=admin
-OPENSEARCH_PASSWORD=admin
-OPENSEARCH_VERIFY_CERTS=false
-OPENSEARCH_SSL_SHOW_WARN=false
+OPENSEARCH_HOSTS="https://opensearch:9200"
+OPENSEARCH_USER="admin"
+OPENSEARCH_PASSWORD="admin"
+OPENSEARCH_VERIFY_CERTS="false"
+OPENSEARCH_SSL_SHOW_WARN="false"
 
 # =========================================================
 # WAZUH INTEGRATION
 # =========================================================
 
 # Wazuh API Configuration
-WAZUH_API_URL=$WAZUH_API_URL
-WAZUH_API_USER=$WAZUH_USER
-WAZUH_API_PASSWORD=$WAZUH_PASSWORD
-WAZUH_VERIFY_SSL=false
+WAZUH_API_URL="$WAZUH_API_URL"
+WAZUH_API_USER="$WAZUH_USER"
+WAZUH_API_PASSWORD="$WAZUH_PASSWORD"
+WAZUH_VERIFY_SSL="false"
 
 # Wazuh Alerts File
-WAZUH_ALERTS_FILE=/var/ossec/logs/alerts/alerts.json
+WAZUH_ALERTS_FILE="/var/ossec/logs/alerts/alerts.json"
 
 # =========================================================
 # GEOIP
 # =========================================================
 
-GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
+GEOIP_DB_PATH="/usr/share/GeoIP/GeoLite2-City.mmdb"
 
 # =========================================================
 # OBSERVABILITY
 # =========================================================
 
-ENABLE_SENTRY=false
-SENTRY_DSN=
+ENABLE_SENTRY="false"
+SENTRY_DSN=""
 
 # =========================================================
 # APPLICATION URLs
 # =========================================================
 
 # Frontend Configuration
-FRONTEND_URL=http://$SERVER_IP:$NGINX_PORT
-VITE_API_URL=http://$SERVER_IP:$NGINX_PORT/api/v1
-VITE_WS_URL=ws://$SERVER_IP:$NGINX_PORT/ws
+FRONTEND_URL="http://$SERVER_IP:$NGINX_PORT"
+VITE_API_URL="http://$SERVER_IP:$NGINX_PORT/api/v1"
+VITE_WS_URL="ws://$SERVER_IP:$NGINX_PORT/ws"
 
 # Backend Configuration  
-BACKEND_URL=http://$SERVER_IP:$NGINX_PORT
-HOST=0.0.0.0
-PORT=8000
-WORKERS=4
+BACKEND_URL="http://$SERVER_IP:$NGINX_PORT"
+HOST="0.0.0.0"
+PORT="8000"
+WORKERS="4"
 
 # =========================================================
 # DEPLOYMENT INFO
 # =========================================================
 
-NGINX_PORT=$NGINX_PORT
+NGINX_PORT="$NGINX_PORT"
 
 # Deployed at: $DEPLOY_PATH
 # Nginx Port: $NGINX_PORT
