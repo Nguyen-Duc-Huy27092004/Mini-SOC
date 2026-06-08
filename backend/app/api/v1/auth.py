@@ -210,6 +210,10 @@ async def change_password(
     current_user.hashed_password = await hash_password(request_data.new_password)
     current_user.must_change_password = False
     db.add(current_user)
+    
+    # CRITICAL FIX: Commit changes to database before revoking sessions
+    await db.commit()
+    
     await revoke_all_user_sessions(db, current_user.id)
     clear_auth_cookies(response)
 
