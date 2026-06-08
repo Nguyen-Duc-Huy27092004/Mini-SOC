@@ -396,6 +396,59 @@ class AlertsFileTailer:
             consumer
         )
 
+    async def tail(self) -> AsyncGenerator[dict, None]:
+        """
+        Async generator that yields raw alert dicts.
+        Compatible with service.py's async for loop.
+        """
+        self._is_running = True
+        
+        logger.info(
+            "tailer_started",
+            file=self.alerts_file
+        )
+
+        while self._is_running:
+            try:
+                if not os.path.exists(self.alerts_file):
+                    logger.warning(
+                        "alerts_file_missing",
+                        file=self.alerts_file
+                    )
+                    await asyncio.sleep(2)
+                    continue
+
+                async with aiofiles.open(
+                    self.alerts_file,
+                    mode="r",
+                    encoding="utf-8",
+                    errors="replace"
+                ) as f:
+                    await f.seek(self._last_position)
+
+                    async for line in f:
+                        if not self._is_running:
+                            return
+
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            raw = json.loads(line)
+                            yield raw
+                        except json.JSONDecodeError:
+                            metrics.parse_errors += 1
+                            continue
+
+                    self._last_position = await f.tell()
+
+                await asyncio.sleep(self.config.poll_interval)
+
+            except Exception:
+                logger.exception("tail_error")
+                await asyncio.sleep(2)
+
     async def stop(self):
 
         self._is_running = False

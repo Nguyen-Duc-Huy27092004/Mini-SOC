@@ -42,9 +42,10 @@ class AlertsCollectorService:
 
         self._tail_task: Optional[asyncio.Task] = None
 
+        # Fix: AlertsFileTailer only takes config, not alerts_file
+        # alerts_file is auto-detected inside the class
         self.tailer = AlertsFileTailer(
             config=CollectorConfig(),
-            alerts_file=self.alerts_file or None,
         )
 
         self.publisher = EventPublisher(

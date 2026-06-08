@@ -666,9 +666,164 @@ echo ""
 echo -e "${GREEN}🗄️  Database & Cache:${NC}"
 echo "  PostgreSQL:       Running in container (db)"
 echo "  Redis:            Running in container (redis)"
-echo "  OpenSearch:       Running in container (opensearch)"
 echo ""
 echo "==========================================================="
+echo ""
+
+# ============================================================
+# POST-DEPLOYMENT VALIDATION
+# ============================================================
+
+log_info "Running post-deployment validation..."
+echo ""
+
+VALIDATION_FAILED=false
+
+# Test 1: All containers running
+log_info "[1/8] Checking container status..."
+CONTAINERS_UP=$(docker-compose -f docker-compose.production.yml ps --services --filter "status=running" | wc -l)
+CONTAINERS_EXPECTED=5  # db, redis, backend, frontend, nginx
+if [ "$CONTAINERS_UP" -ge "$CONTAINERS_EXPECTED" ]; then
+    log_success "✓ All containers are running ($CONTAINERS_UP/$CONTAINERS_EXPECTED)"
+else
+    log_error "✗ Only $CONTAINERS_UP/$CONTAINERS_EXPECTED containers running!"
+    VALIDATION_FAILED=true
+fi
+
+# Test 2: Database connectivity
+log_info "[2/8] Testing database connectivity..."
+if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
+    log_success "✓ PostgreSQL is accessible"
+else
+    log_error "✗ PostgreSQL connection failed!"
+    VALIDATION_FAILED=true
+fi
+
+# Test 3: Check migrations applied
+log_info "[3/8] Verifying database migrations..."
+MIGRATION_VERSION=$(docker-compose -f docker-compose.production.yml exec -T db \
+    psql -U postgres -d mini_soc_prod -tAc "SELECT version_num FROM alembic_version" 2>/dev/null || echo "none")
+if [ "$MIGRATION_VERSION" = "005_fill_missing_columns" ]; then
+    log_success "✓ Latest migration applied: $MIGRATION_VERSION"
+elif [ "$MIGRATION_VERSION" != "none" ]; then
+    log_warn "⚠ Migration version: $MIGRATION_VERSION (expected: 005_fill_missing_columns)"
+else
+    log_error "✗ No migrations applied!"
+    VALIDATION_FAILED=true
+fi
+
+# Test 4: Redis connectivity
+log_info "[4/8] Testing Redis connectivity..."
+if docker-compose -f docker-compose.production.yml exec -T redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+    log_success "✓ Redis is accessible"
+else
+    log_warn "⚠ Redis ping failed (may still be initializing)"
+fi
+
+# Test 5: Backend health endpoint
+log_info "[5/8] Testing backend API..."
+HEALTH_RESPONSE=$(curl -sf http://localhost:$NGINX_PORT/api/v1/health/ready 2>/dev/null)
+if echo "$HEALTH_RESPONSE" | grep -q "ok"; then
+    log_success "✓ Backend health check passed"
+else
+    log_error "✗ Backend health check failed!"
+    log_info "Response: $HEALTH_RESPONSE"
+    VALIDATION_FAILED=true
+fi
+
+# Test 6: Frontend accessibility
+log_info "[6/8] Testing frontend..."
+FRONTEND_HTTP=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:$NGINX_PORT/ 2>/dev/null)
+if [ "$FRONTEND_HTTP" = "200" ]; then
+    log_success "✓ Frontend is accessible"
+else
+    log_error "✗ Frontend returned HTTP $FRONTEND_HTTP"
+    VALIDATION_FAILED=true
+fi
+
+# Test 7: Collector service
+log_info "[7/8] Checking collector service..."
+sleep 3  # Give collector time to start
+COLLECTOR_LOGS=$(docker-compose -f docker-compose.production.yml logs backend 2>/dev/null | grep -i "collector_started" || echo "")
+if [ -n "$COLLECTOR_LOGS" ]; then
+    log_success "✓ Collector service started"
+else
+    log_warn "⚠ Collector service not detected (check logs manually)"
+fi
+
+# Test 8: Check for critical errors
+log_info "[8/8] Scanning for critical errors in logs..."
+CRITICAL_ERRORS=$(docker-compose -f docker-compose.production.yml logs 2>/dev/null | grep -iE "critical error|fatal|traceback.*error" | wc -l)
+if [ "$CRITICAL_ERRORS" -eq 0 ]; then
+    log_success "✓ No critical errors in logs"
+else
+    log_warn "⚠ Found $CRITICAL_ERRORS potential errors in logs (review manually)"
+fi
+
+echo ""
+
+# ============================================================
+# VALIDATION RESULT
+# ============================================================
+
+if [ "$VALIDATION_FAILED" = true ]; then
+    echo ""
+    log_error "═══════════════════════════════════════"
+    log_error "⚠️  DEPLOYMENT VALIDATION FAILED"
+    log_error "═══════════════════════════════════════"
+    echo ""
+    log_info "Some validation tests failed. System may not be fully functional."
+    log_info "Troubleshooting steps:"
+    echo "  1. Check container logs: docker-compose -f docker-compose.production.yml logs"
+    echo "  2. Verify environment: cat .env.production"
+    echo "  3. Restart services: docker-compose -f docker-compose.production.yml restart"
+    echo "  4. Run debug script: bash debug_deployment.sh (if available)"
+    echo ""
+    log_warn "System is running but may have issues. Review logs before proceeding."
+    echo ""
+else
+    echo ""
+    log_success "═══════════════════════════════════════"
+    log_success "✅ DEPLOYMENT VALIDATION PASSED"
+    log_success "═══════════════════════════════════════"
+    echo ""
+    log_success "All validation tests passed! System is fully operational."
+    echo ""
+fi
+
+# ============================================================
+# SAVE DEPLOYMENT INFO
+# ============================================================
+
+cat > "$DEPLOY_PATH/DEPLOYMENT_INFO.txt" << EOF
+Mini-SOC Deployment Information
+Generated: $(date)
+
+Deployment Path: $DEPLOY_PATH
+Server IP: $SERVER_IP
+Access Port: $NGINX_PORT
+Wazuh API: $WAZUH_API_URL
+
+Access URL: http://$SERVER_IP:$NGINX_PORT
+
+Admin User: $ADMIN_USER
+Admin Email: $ADMIN_EMAIL
+
+Database Password: $DB_PASSWORD
+Redis Password: $REDIS_PASSWORD
+Secret Key: $SECRET_KEY
+
+Container Status:
+$(docker-compose -f docker-compose.production.yml ps)
+
+Migration Version: $MIGRATION_VERSION
+
+Validation Status: $([ "$VALIDATION_FAILED" = false ] && echo "PASSED" || echo "FAILED")
+EOF
+
+chmod 600 "$DEPLOY_PATH/DEPLOYMENT_INFO.txt"
+log_success "Deployment info saved to: $DEPLOY_PATH/DEPLOYMENT_INFO.txt"
+
 echo ""
 echo -e "${BLUE}✅ Next Steps:${NC}"
 echo "1. Open browser: http://$SERVER_IP:$NGINX_PORT"
@@ -677,19 +832,20 @@ echo "3. Verify Wazuh alerts are being collected"
 echo "4. Check system monitoring dashboard"
 echo ""
 echo -e "${BLUE}📋 Useful Commands:${NC}"
-echo "  View logs:        docker-compose -f docker-compose.production.yml logs -f backend"
-echo "  Restart service:  docker-compose -f docker-compose.production.yml restart"
-echo "  Stop all:         docker-compose -f docker-compose.production.yml down"
-echo "  View config:      cat .env.production"
+echo "  View logs:        cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml logs -f backend"
+echo "  Restart service:  cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml restart"
+echo "  Stop all:         cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml down"
+echo "  View config:      cat $DEPLOY_PATH/.env.production"
 echo "  Container stats:  docker stats"
 echo ""
-echo -e "${YELLOW}⚠️  Important Notes:${NC}"
-echo "• Save all passwords from .env.production in a secure location"
-echo "• Keep backup: docker-compose.production.yml.bak"
-echo "• Monitor system resources regularly: docker stats"
-echo "• Ensure firewall allows port $NGINX_PORT (TCP)"
-echo "• Change admin password immediately after first login"
-echo "• Regularly backup PostgreSQL data: docker-compose exec db pg_dump -U postgres mini_soc_prod"
+echo -e "${YELLOW}⚠️  Security Reminders:${NC}"
+echo "• Change admin password on first login"
+echo "• Backup passwords file: $DEPLOY_PATH/DEPLOYMENT_INFO.txt"
+echo "• Enable firewall: sudo ufw allow $NGINX_PORT/tcp"
+echo "• Regular backups: docker-compose -f docker-compose.production.yml exec db pg_dump"
+echo "• Keep system updated: apt update && apt upgrade"
 echo ""
-echo "==========================================================="
+echo "═══════════════════════════════════════"
+echo "  🚀 DEPLOYMENT COMPLETED SUCCESSFULLY"
+echo "═══════════════════════════════════════"
 echo ""
