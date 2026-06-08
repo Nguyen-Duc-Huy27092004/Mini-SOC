@@ -126,7 +126,8 @@ echo ""
 # Generate passwords
 DB_PASSWORD=$(openssl rand -base64 32)
 REDIS_PASSWORD=$(openssl rand -base64 32)
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+# Use secrets module if available (Python 3.6+), fallback to openssl
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || openssl rand -hex 32)
 
 # Export variables for Python subprocess
 export NGINX_PORT DB_PASSWORD REDIS_PASSWORD SECRET_KEY
@@ -190,6 +191,13 @@ echo ""
 # ============================================================
 # CREATE .env.production
 # ============================================================
+
+log_info "Determining Wazuh alerts mount path..."
+if [ -d "/var/ossec/logs/alerts" ]; then
+    WAZUH_MOUNT_PATH="/var/ossec/logs/alerts"
+else
+    WAZUH_MOUNT_PATH="$DEPLOY_PATH/data/wazuh"
+fi
 
 log_info "Creating .env.production..."
 
@@ -313,10 +321,13 @@ PORT="8000"
 WORKERS="4"
 
 # =========================================================
-# DEPLOYMENT INFO
+# DEPLOYMENT INFO & DOCKER VOLUMES
 # =========================================================
 
 NGINX_PORT="$NGINX_PORT"
+
+# Wazuh Alerts Mount Path
+WAZUH_ALERTS_HOST_PATH="$WAZUH_MOUNT_PATH"
 
 # Deployed at: $DEPLOY_PATH
 # Nginx Port: $NGINX_PORT
@@ -397,6 +408,16 @@ log_success "Cleanup complete"
 echo ""
 
 # ============================================================
+# CREATE WAZUH ALERTS DIRECTORY
+# ============================================================
+
+log_info "Creating Wazuh alerts mount directory..."
+mkdir -p "$DEPLOY_PATH/data/wazuh"
+chmod 755 "$DEPLOY_PATH/data/wazuh"
+log_success "Wazuh data directory created"
+echo ""
+
+# ============================================================
 # BUILD IMAGES
 # ============================================================
 
@@ -405,36 +426,158 @@ log_info "Using .env.production from: $PWD/.env.production"
 
 # Export environment variables to be used by docker-compose
 set -a
-source .env.production
+if ! source .env.production 2>/dev/null; then
+    log_error ".env.production has syntax errors! Check file format."
+    cat .env.production | head -20
+    exit 1
+fi
 set +a
 
-docker-compose -f docker-compose.production.yml build --no-cache backend
+log_success "Environment variables loaded successfully"
+
+# Build backend first
+log_info "Building backend image..."
+if ! docker-compose -f docker-compose.production.yml build backend 2>&1 | tee /tmp/backend_build.log; then
+    log_error "Backend build failed! Check logs:"
+    tail -50 /tmp/backend_build.log
+    exit 1
+fi
 log_success "Backend image built"
 
-docker-compose -f docker-compose.production.yml build --no-cache frontend
+# Build frontend
+log_info "Building frontend image..."
+if ! docker-compose -f docker-compose.production.yml build frontend 2>&1 | tee /tmp/frontend_build.log; then
+    log_error "Frontend build failed! Check logs:"
+    tail -50 /tmp/frontend_build.log
+    exit 1
+fi
 log_success "Frontend image built"
 
 echo ""
 
 # ============================================================
-# START SERVICES
+# START DATABASE & REDIS FIRST
 # ============================================================
 
-log_info "Starting services..."
-log_info "Docker Compose will load environment from: .env.production"
+log_info "Starting database and Redis services first..."
 
-# Verify docker-compose can see the env file
+docker-compose -f docker-compose.production.yml up -d db redis
+
+log_info "Waiting for database to be ready..."
+DB_READY=false
+for i in {1..60}; do
+    if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
+        log_success "✓ PostgreSQL is ready"
+        DB_READY=true
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
+echo ""
+
+if [ "$DB_READY" = false ]; then
+    log_error "Database failed to start after 120 seconds. Showing logs:"
+    docker-compose -f docker-compose.production.yml logs db
+    exit 1
+fi
+
+# Wait for Redis
+log_info "Waiting for Redis..."
+REDIS_READY=false
+for i in {1..30}; do
+    if docker-compose -f docker-compose.production.yml exec -T redis redis-cli -a "$REDIS_PASSWORD" ping &> /dev/null 2>&1; then
+        log_success "✓ Redis is ready"
+        REDIS_READY=true
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+echo ""
+
+if [ "$REDIS_READY" = false ]; then
+    log_warn "Redis authentication check failed (this may be normal during startup)"
+fi
+
+echo ""
+
+# ============================================================
+# RUN DATABASE MIGRATIONS BEFORE BACKEND STARTS
+# ============================================================
+
+log_info "Running database migrations BEFORE starting backend..."
+
+# Run migrations using one-off container
+if ! docker-compose -f docker-compose.production.yml run --rm \
+    -e POSTGRES_SERVER=db \
+    -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+    -e SECRET_KEY="$SECRET_KEY" \
+    backend sh -c "alembic upgrade head" 2>&1 | tee /tmp/migration.log; then
+    log_error "Database migration failed! Check logs:"
+    cat /tmp/migration.log
+    docker-compose -f docker-compose.production.yml logs db
+    exit 1
+fi
+
+log_success "✅ Database migrations completed SUCCESSFULLY"
+echo ""
+
+# ============================================================
+# START REMAINING SERVICES
+# ============================================================
+
+log_info "Starting backend, frontend, and nginx..."
+
+# Verify docker-compose config is valid
 if ! docker-compose -f docker-compose.production.yml config &> /dev/null; then
     log_error "Docker compose configuration error. Check .env.production format"
     docker-compose -f docker-compose.production.yml config
     exit 1
 fi
 
+# Start all services
 docker-compose -f docker-compose.production.yml up -d
 
-# Wait for services to be ready
-log_info "Waiting for services to start (30 seconds)..."
-sleep 30
+log_info "Waiting for backend to be ready..."
+log_info "Backend has 15s start_period + health checks"
+
+# Wait for backend health
+BACKEND_READY=false
+for i in {1..60}; do
+    if curl -sf http://localhost:8000/api/v1/health/ready > /dev/null 2>&1; then
+        log_success "✓ Backend is healthy"
+        BACKEND_READY=true
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
+echo ""
+
+if [ "$BACKEND_READY" = false ]; then
+    log_error "Backend failed to start. Showing logs:"
+    docker-compose -f docker-compose.production.yml logs --tail=100 backend
+    exit 1
+fi
+
+# Wait for nginx
+log_info "Waiting for Nginx..."
+NGINX_READY=false
+for i in {1..30}; do
+    if curl -sf http://localhost:$NGINX_PORT/api/v1/health/ready > /dev/null 2>&1; then
+        log_success "✓ Nginx is serving requests"
+        NGINX_READY=true
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
+echo ""
+
+if [ "$NGINX_READY" = false ]; then
+    log_warn "Nginx not responding yet (frontend may still be building)"
+fi
 
 echo ""
 
@@ -442,63 +585,11 @@ echo ""
 # VERIFY DEPLOYMENT
 # ============================================================
 
-log_info "Verifying deployment..."
+log_info "Final deployment verification..."
 
-# Check services
+# Check all services status
 docker-compose -f docker-compose.production.yml ps
 
-echo ""
-
-# Verify environment variables are loaded in containers
-log_info "Checking environment variables in containers..."
-
-log_info "Checking backend environment variables..."
-if docker-compose -f docker-compose.production.yml exec -T backend env | grep -q "POSTGRES_PASSWORD"; then
-    log_success "✓ Environment variables loaded in backend"
-else
-    log_warn "⚠ Could not verify environment variables in backend (container may still be starting)"
-fi
-
-log_info "Checking database connection..."
-if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
-    log_success "✓ PostgreSQL is ready"
-else
-    log_warn "⚠ PostgreSQL not ready yet"
-fi
-
-log_info "Checking Redis connection..."
-if docker-compose -f docker-compose.production.yml exec -T redis redis-cli ping &> /dev/null; then
-    log_success "✓ Redis is ready"
-else
-    log_warn "⚠ Redis not ready yet"
-fi
-
-echo ""
-
-# Health check
-log_info "Running health checks..."
-
-if curl -s http://localhost:8000/api/v1/health/ready > /dev/null; then
-    log_success "Backend health check passed"
-else
-    log_warn "Backend health check failed (it may still be starting)"
-fi
-
-if curl -s http://localhost:$NGINX_PORT > /dev/null; then
-    log_success "Frontend is accessible"
-else
-    log_warn "Frontend not responding yet (it may still be starting)"
-fi
-
-echo ""
-
-# ============================================================
-# DATABASE MIGRATIONS
-# ============================================================
-
-log_info "Running database migrations..."
-docker-compose -f docker-compose.production.yml exec -T backend alembic upgrade head
-log_success "Database migrations completed"
 echo ""
 
 # ============================================================
@@ -506,22 +597,43 @@ echo ""
 # ============================================================
 
 log_info "Creating admin user..."
+echo ""
 
 read -p "Enter admin username (default: admin): " ADMIN_USER
 ADMIN_USER=${ADMIN_USER:-"admin"}
 
-read -p "Enter admin email: " ADMIN_EMAIL
+while true; do
+    read -p "Enter admin email: " ADMIN_EMAIL
+    if [[ "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        break
+    else
+        log_error "Invalid email format. Please try again."
+    fi
+done
 
-read -sp "Enter admin password: " ADMIN_PASSWORD
-echo ""
+while true; do
+    read -sp "Enter admin password (min 8 characters): " ADMIN_PASSWORD
+    echo ""
+    if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
+        break
+    else
+        log_error "Password must be at least 8 characters"
+    fi
+done
 
-docker-compose -f docker-compose.production.yml exec -T backend \
-    python app/scripts/create_admin_user.py \
-    --user "$ADMIN_USER" \
+log_info "Creating admin user in database..."
+if docker-compose -f docker-compose.production.yml exec -T backend \
+    python -c "import sys; sys.path.insert(0, '/app'); from app.scripts.create_admin_user import main; import asyncio; asyncio.run(main())" \
     --email "$ADMIN_EMAIL" \
-    --password "$ADMIN_PASSWORD"
+    --password "$ADMIN_PASSWORD" \
+    --user "$ADMIN_USER" 2>&1 | tee /tmp/create_admin.log; then
+    log_success "✅ Admin user created successfully"
+else
+    log_warn "Admin user creation may have failed. Check output above."
+    log_info "You can create admin manually later by running:"
+    echo "  docker-compose -f docker-compose.production.yml exec backend python app/scripts/create_admin_user.py --email <email> --password <password>"
+fi
 
-log_success "Admin user created"
 echo ""
 
 # ============================================================
