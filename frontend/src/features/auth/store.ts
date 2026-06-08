@@ -112,11 +112,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         initialized: true,
         error: null,
       });
-    } catch {
+    } catch (error) {
+      // Silently fail if not authenticated - this is expected on first load
+      console.debug('Auth initialization: User not authenticated');
       set({
         user: null,
         isAuthenticated: false,
         initialized: true,
+        error: null, // Don't set error for expected 401
       });
     }
   },

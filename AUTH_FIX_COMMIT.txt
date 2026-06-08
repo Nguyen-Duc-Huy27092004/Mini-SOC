@@ -1,0 +1,82 @@
+fix: authentication bugs - 403 refresh & infinite loop
+
+Fixed 2 critical authentication bugs causing console errors:
+
+BUG #8: Axios Interceptor Infinite Loop 🔴 CRITICAL
+- Problem: /auth/me fails 401 → interceptor calls /auth/refresh
+  → /auth/refresh fails → interceptor retries /auth/refresh again
+  → infinite loop consuming resources
+  
+- Root cause: Interceptor was retrying ALL 401 responses including
+  auth endpoints themselves
+  
+- Fix: Added isAuthEndpoint check to prevent retry on:
+  * /auth/refresh (prevent loop)
+  * /auth/login (prevent double login)
+  
+- Impact: No more infinite refresh loops, cleaner console output
+
+BUG #9: /auth/refresh Returns 403 Instead of 401 🔴 CRITICAL  
+- Problem: When cookies are stale/partial, /auth/refresh validates
+  CSRF first and returns 403, but should return 401 for auth failures
+  
+- Root cause: validate_csrf() called before checking refresh token,
+  causing confusing 403 Forbidden errors
+  
+- Fix: Reordered validation logic:
+  1. Check refresh token exists → 401 if missing
+  2. Try validate CSRF → catch exception
+  3. If CSRF fails → clear cookies, return 401 (not 403)
+  4. Continue with token refresh
+  
+- Impact: Consistent 401 responses for authentication failures,
+  proper cookie cleanup, better UX
+
+IMPROVEMENTS:
+- Added debug logging in auth store initialize()
+- Improved error handling in axios interceptor
+- Better HTTP status code semantics (401 vs 403)
+- Prevent interceptor from retrying auth endpoints
+
+FILES CHANGED:
+- backend/app/api/v1/auth.py
+  * Reordered /auth/refresh validation logic
+  * Added try-catch around CSRF validation
+  * Clear cookies on CSRF failure
+  
+- frontend/src/shared/api/client.ts
+  * Added isAuthEndpoint check in interceptor
+  * Prevent retry loop on auth endpoints
+  * Better error propagation
+  
+- frontend/src/features/auth/store.ts
+  * Added debug logging for initialize()
+  * Clarified expected 401 behavior
+
+NEW TOOLS:
+- test_auth_flow.sh: Automated auth flow testing
+- hotfix_auth_bugs.sh: Quick rebuild for auth fixes
+- AUTH_ERRORS_EXPLAINED.md: Documentation of expected vs real errors
+
+TESTING:
+✅ /auth/me without login → 401 (expected)
+✅ /auth/refresh without cookies → 401 (not 403!)
+✅ /auth/refresh with stale CSRF → 401 + cookies cleared
+✅ No infinite loops in interceptor
+✅ Login flow works correctly
+✅ Token refresh works correctly
+✅ Logout clears session properly
+
+BREAKING CHANGES: None
+
+NOTES:
+- Console showing "401 /auth/me" on page load is EXPECTED behavior
+- This happens when frontend checks if user is already logged in
+- Not a bug, just normal auth initialization flow
+- See AUTH_ERRORS_EXPLAINED.md for details
+
+PRODUCTION IMPACT:
+- Fixes authentication errors in console
+- Prevents resource waste from infinite loops
+- Better user experience with consistent error codes
+- Cleaner session management

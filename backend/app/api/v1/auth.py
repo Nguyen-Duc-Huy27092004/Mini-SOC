@@ -107,16 +107,34 @@ async def refresh_session(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
-    validate_csrf(request)
+    # Get refresh token first
     refresh_token = request.cookies.get(REFRESH_COOKIE)
     if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Thiếu refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Thiếu refresh token"
+        )
+    
+    # Only validate CSRF if we have a valid refresh token
+    # This prevents 403 when cookies are stale/partial
+    try:
+        validate_csrf(request)
+    except HTTPException:
+        # If CSRF validation fails, clear cookies and return 401
+        clear_auth_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session không hợp lệ, vui lòng đăng nhập lại"
+        )
 
     try:
         access_token, new_refresh, user = await refresh_tokens(db, refresh_token)
     except AuthError as exc:
         clear_auth_cookies(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail=exc.message
+        )
 
     csrf = generate_csrf_token()
     set_auth_cookies(response, access_token, new_refresh, csrf)
