@@ -81,6 +81,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = ", ".join(permissions)
 
         # Remove server header (security through obscurity)
-        response.headers.pop("Server", None)
+        # MutableHeaders doesn't have pop(), use del with try-except
+        try:
+            del response.headers["Server"]
+        except KeyError:
+            pass
 
         return response

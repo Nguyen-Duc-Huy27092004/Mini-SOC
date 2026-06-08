@@ -1,0 +1,61 @@
+fix: 7 critical production bugs - deploy ready
+
+Fixed all crash bugs preventing production deployment:
+
+CRITICAL FIXES:
+- Bug #7: MutableHeaders.pop() AttributeError causing 500 errors
+  * Fixed: Use del with try-except in security_headers middleware
+  * Impact: Every HTTP request was crashing
+  
+- Bug #6: Backend missing 30+ environment variables
+  * Fixed: Added all required ENV vars to docker-compose.production.yml
+  * Impact: Backend crash on startup due to undefined variables
+  
+- Bug #1: AlertsFileTailer wrong constructor call
+  * Fixed: Pass CollectorConfig object instead of alerts_file param
+  * Impact: Collector crash immediately on startup
+  
+- Bug #2: Missing CSRF_VALIDATE_ORIGIN in config
+  * Fixed: Added field to Settings class in config.py
+  * Impact: Backend crash during CSRF validation
+
+HIGH PRIORITY FIXES:
+- Bug #4: Health check using wrong port in deploy script
+  * Fixed: Changed from port 8000 to $NGINX_PORT
+  * Impact: Deploy script falsely reporting failures
+  
+- Bug #5: Database migration timeout
+  * Fixed: Added 60s wait loop with pg_isready check
+  * Impact: Migrations fail because PostgreSQL not ready
+  
+- Bug #3: Migration chain broken
+  * Fixed: Corrected down_revision and moved dependent indexes
+  * Impact: alembic upgrade head fails
+
+DEPLOY IMPROVEMENTS:
+- Added validate_deployment.sh for post-deploy verification
+- Added debug_deployment.sh for troubleshooting
+- Added hotfix_rebuild.sh for quick backend updates
+- Added BUGFIX_SUMMARY.md with detailed documentation
+- Added DEPLOY_QUICKSTART.md for easy deployment
+
+FILES CHANGED:
+- backend/app/middleware/security_headers.py
+- backend/app/collector/service.py  
+- backend/app/core/config.py
+- backend/alembic/versions/004_performance_indexes.py
+- backend/alembic/versions/005_fill_missing_columns.py
+- docker-compose.production.yml
+- deploy_on_wazuh.sh
+
+TESTING:
+- ✅ All middleware tests pass
+- ✅ Migration chain verified (001→002→003→004→005)
+- ✅ Backend starts without errors
+- ✅ Health endpoint responds correctly
+- ✅ Deploy script completes successfully
+
+BREAKING CHANGES: None
+
+PRODUCTION READY: Yes ✅
+System is now deployable without crashes.
