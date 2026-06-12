@@ -350,12 +350,26 @@ class WazuhAPIClient:
         )
 
         if not response:
+            logger.error(
+                "get_agents_failed",
+                reason="no_response_from_wazuh_api",
+                endpoint="/agents",
+            )
             return []
 
-        return response.get("data", {}).get(
+        items = response.get("data", {}).get(
             "affected_items",
             [],
         )
+        
+        logger.info(
+            "get_agents_success",
+            count=len(items),
+            limit=limit,
+            offset=offset,
+        )
+        
+        return items
 
     async def get_agent_detail(
         self,

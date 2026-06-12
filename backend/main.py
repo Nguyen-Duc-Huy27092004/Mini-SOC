@@ -23,6 +23,7 @@ from app.websocket.routes import router as ws_router
 logger = structlog.get_logger()
 
 collector_task: asyncio.Task | None = None
+sync_agents_task: asyncio.Task | None = None
 
 
 def _init_sentry() -> None:
@@ -31,6 +32,42 @@ def _init_sentry() -> None:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
 
         sentry_sdk.init(dsn=settings.SENTRY_DSN, integrations=[FastApiIntegration()])
+
+
+async def _sync_agents_loop() -> None:
+    """
+    Periodically sync agents from Wazuh API to database.
+    Runs every 5 minutes to keep EndpointInventory table updated.
+    """
+    from app.collector import get_collector
+    
+    collector = get_collector()
+    
+    while True:
+        try:
+            count = await asyncio.wait_for(
+                collector.sync_endpoint_inventory(),
+                timeout=30.0,
+            )
+            
+            await logger.ainfo(
+                "agents_synced",
+                count=count,
+            )
+        
+        except asyncio.TimeoutError:
+            await logger.awarning(
+                "agents_sync_timeout",
+            )
+        
+        except Exception:
+            await logger.aerror(
+                "agents_sync_failed",
+                exc_info=True,
+            )
+        
+        # Wait 5 minutes before next sync
+        await asyncio.sleep(300)
 
 
 @asynccontextmanager
@@ -45,6 +82,10 @@ async def lifespan(app: FastAPI):
     # Start real-time alert collector
     global collector_task
     collector_task = asyncio.create_task(start_collector())
+    
+    # Start periodic agent sync from Wazuh API
+    global sync_agents_task
+    sync_agents_task = asyncio.create_task(_sync_agents_loop())
 
     yield
 
@@ -55,6 +96,13 @@ async def lifespan(app: FastAPI):
         collector_task.cancel()
         try:
             await asyncio.wait_for(asyncio.gather(collector_task, return_exceptions=True), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+    
+    if sync_agents_task:
+        sync_agents_task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.gather(sync_agents_task, return_exceptions=True), timeout=5.0)
         except asyncio.TimeoutError:
             pass
     

@@ -225,6 +225,10 @@ class AlertsCollectorService:
             )
 
             if not agents:
+                await logger.awarning(
+                    "inventory_sync_no_agents",
+                    reason="wazuh_api_returned_empty",
+                )
                 return 0
 
             from sqlalchemy import select
@@ -278,7 +282,21 @@ class AlertsCollectorService:
 
                 await db.commit()
 
+            await logger.ainfo(
+                "inventory_sync_complete",
+                agents_synced=count,
+            )
+
             return count
+
+        except asyncio.TimeoutError:
+
+            await logger.aerror(
+                "inventory_sync_timeout",
+                timeout_seconds=20,
+            )
+
+            return 0
 
         except Exception:
 
