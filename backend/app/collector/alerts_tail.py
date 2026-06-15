@@ -50,6 +50,8 @@ class CollectorConfig:
     dedup_ttl_seconds: int = 300
     max_message_size: int = 8192
     health_timeout_seconds: int = 60
+    # Override auto-detected alerts file path
+    alerts_file_override: str = ""
 
 
 # =============================================================================
@@ -359,7 +361,15 @@ class AlertsFileTailer:
         self.dedup = DeduplicationCache()
 
     def _detect_alerts_file(self) -> str:
+        # Priority 1: Use override from config (from settings.WAZUH_ALERTS_FILE)
+        if self.config.alerts_file_override:
+            logger.info(
+                "alerts_file_from_config",
+                path=self.config.alerts_file_override,
+            )
+            return self.config.alerts_file_override
 
+        # Priority 2: Auto-detect based on OS
         if platform.system() == "Windows":
 
             candidates = [

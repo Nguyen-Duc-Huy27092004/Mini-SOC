@@ -192,15 +192,18 @@ class Settings(BaseSettings):
 
     WAZUH_API_URL: str = "https://localhost:55000"
 
-    WAZUH_API_USER: str = "wazuh"
+    WAZUH_API_USER: str = "admin"
 
-    WAZUH_API_PASSWORD: SecretStr
+    WAZUH_API_PASSWORD: SecretStr = Field(default=SecretStr("admin"))
 
-    WAZUH_VERIFY_SSL: bool = True
+    # Default False because most Wazuh deployments use self-signed certificates.
+    # Set to True only in production with proper CA-signed certificates.
+    WAZUH_VERIFY_SSL: bool = False
 
     WAZUH_CA_CERTS: str | None = None
 
-    WAZUH_ALERTS_FILE: str = ""
+    # Default path for Wazuh alerts file (Linux). Change via env var for Windows.
+    WAZUH_ALERTS_FILE: str = "/var/ossec/logs/alerts/alerts.json"
 
     # =========================================================
     # GEOIP

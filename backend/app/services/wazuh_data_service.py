@@ -84,6 +84,7 @@ class WazuhDataService:
             agents_total=agents_total,
             attacks_blocked=attacks_blocked,
             average_risk_score=avg_risk,
+            data_status="available" if (alerts_today > 0 or agents_total > 0) else "degraded",
         )
 
     async def get_trends(self, db: AsyncSession, hours: int = 24) -> List[TrendPoint]:

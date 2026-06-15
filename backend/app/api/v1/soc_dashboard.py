@@ -93,3 +93,78 @@ async def dashboard_mitre(
     db: AsyncSession = Depends(get_db),
 ) -> list[MitreItem]:
     return await wazuh_data.get_mitre_mapping(db)
+
+
+@router.get("/debug")
+async def dashboard_debug(
+    _: User = Depends(require_roles(_roles)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Live pipeline status for diagnostics.
+    Returns DB counts, collector stats, Wazuh API health, and data availability.
+    Does NOT require password_changed — usable on first login.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import func, select
+    from app.models.event import WazuhEvent, EndpointInventory
+    from app.collector.service import get_collector
+    from app.core.config import settings
+
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # DB counts
+    total_events = await db.scalar(select(func.count(WazuhEvent.id))) or 0
+    events_today = await db.scalar(
+        select(func.count(WazuhEvent.id)).where(WazuhEvent.event_timestamp >= today)
+    ) or 0
+    total_agents = await db.scalar(select(func.count(EndpointInventory.id))) or 0
+    active_agents = await db.scalar(
+        select(func.count(EndpointInventory.id)).where(EndpointInventory.status == "active")
+    ) or 0
+
+    # Collector stats
+    try:
+        collector = get_collector()
+        collector_stats = collector.get_stats()
+    except Exception as e:
+        collector_stats = {"error": str(e)}
+
+    # Wazuh API test (quick)
+    wazuh_status = "not_tested"
+    try:
+        from app.integrations.wazuh_client import WazuhAPIClient
+        client = WazuhAPIClient(
+            base_url=settings.WAZUH_API_URL,
+            username=settings.WAZUH_API_USER,
+            password=settings.WAZUH_API_PASSWORD.get_secret_value(),
+            verify_ssl=settings.WAZUH_VERIFY_SSL,
+            timeout=10,
+        )
+        token = await client._authenticate()
+        wazuh_status = "authenticated" if token else "auth_failed"
+        await client.close()
+    except Exception as e:
+        wazuh_status = f"error: {str(e)[:200]}"
+
+    return {
+        "pipeline_status": {
+            "database": {
+                "total_events": total_events,
+                "events_today": events_today,
+                "total_agents": total_agents,
+                "active_agents": active_agents,
+                "has_data": total_events > 0,
+            },
+            "collector": collector_stats,
+            "wazuh_api": {
+                "url": settings.WAZUH_API_URL,
+                "user": settings.WAZUH_API_USER,
+                "verify_ssl": settings.WAZUH_VERIFY_SSL,
+                "alerts_file": settings.WAZUH_ALERTS_FILE,
+                "status": wazuh_status,
+            },
+        },
+        "data_available": total_events > 0,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

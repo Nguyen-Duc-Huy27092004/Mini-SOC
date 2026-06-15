@@ -42,10 +42,11 @@ class AlertsCollectorService:
 
         self._tail_task: Optional[asyncio.Task] = None
 
-        # Fix: AlertsFileTailer only takes config, not alerts_file
-        # alerts_file is auto-detected inside the class
+        # Pass the configured alerts file path from settings into the tailer config
         self.tailer = AlertsFileTailer(
-            config=CollectorConfig(),
+            config=CollectorConfig(
+                alerts_file_override=settings.WAZUH_ALERTS_FILE,
+            ),
         )
 
         self.publisher = EventPublisher(

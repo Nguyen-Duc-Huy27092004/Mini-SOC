@@ -16,6 +16,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import ssl
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -70,8 +71,16 @@ class WazuhAPIClient:
         if self._session and not self._session.closed:
             return self._session
 
+        # Build ssl context properly so self-signed certs are accepted
+        if self.verify_ssl:
+            ssl_context: bool | ssl.SSLContext = True
+        else:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
         connector = aiohttp.TCPConnector(
-            ssl=self.verify_ssl,
+            ssl=ssl_context,
             limit=self.max_connections,
             ttl_dns_cache=300,
         )
@@ -110,8 +119,15 @@ class WazuhAPIClient:
                 session = await self._get_session()
 
                 url = urljoin(
-                    self.base_url,
-                    "/security/user/authenticate",
+                    self.base_url + "/",
+                    "security/user/authenticate",
+                )
+
+                logger.info(
+                    "wazuh_authenticating",
+                    url=url,
+                    user=self.username,
+                    verify_ssl=self.verify_ssl,
                 )
 
                 start = time.monotonic()

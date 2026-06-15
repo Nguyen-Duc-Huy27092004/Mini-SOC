@@ -39,9 +39,14 @@ class GeoIPService:
         """Get or initialize GeoIP database reader."""
         if self._reader is None:
             try:
+                import os
+                if not os.path.exists(self.db_path):
+                    # Silently skip — GeoIP DB is optional
+                    return None
                 self._reader = geoip2.database.Reader(self.db_path)
+                logger.info("geoip_db_loaded", path=self.db_path)
             except Exception as e:
-                await logger.aerror("geoip_db_error", error=str(e), path=self.db_path)
+                logger.warning("geoip_db_unavailable", error=str(e), path=self.db_path)
                 return None
         return self._reader
 
@@ -88,6 +93,8 @@ class GeoIPService:
             
             result = {
                 "ip": ip_address,
+                # Use 'country' key — this is what EventNormalizer expects
+                "country": response.country.iso_code,
                 "country_code": response.country.iso_code,
                 "country_name": response.country.name,
                 "city": response.city.name,
