@@ -56,8 +56,12 @@ services:
     environment:
       - ENV=production
       - DEBUG=false
+      - SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
       - POSTGRES_SERVER=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=SocSecurePass123!
       - POSTGRES_PORT=5432
+      - POSTGRES_DB=mini_soc
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - WAZUH_ALERTS_FILE=/var/ossec/logs/alerts/alerts.json
