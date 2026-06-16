@@ -104,6 +104,15 @@ log_section "CONFIGURATION"
 read -rp "Deployment path [default: /opt/mini-soc]: " DEPLOY_PATH
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/mini-soc}"
 
+# Clean Install prompt
+echo ""
+read -rp "Perform a CLEAN install? (Wipes existing Mini-SOC databases/data) [y/N]: " CLEAN_INSTALL
+if [[ "$CLEAN_INSTALL" =~ ^[Yy]$ ]]; then
+    WIPE_VOLUMES="true"
+else
+    WIPE_VOLUMES="false"
+fi
+
 # Choose Mini-SOC port (must not conflict with anything)
 while true; do
     read -rp "Mini-SOC Nginx port [default: 2709]: " NGINX_PORT
@@ -171,9 +180,16 @@ while true; do
 done
 
 # ──── GENERATE SECRETS ────
-DB_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
-REDIS_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
-SECRET_KEY=$(openssl rand -hex 32)
+if [[ -f "$DEPLOY_PATH/.env.production" ]]; then
+    log_info "Found existing .env.production. Reusing existing DB, Redis, and Secret keys..."
+    EXISTING_DB_PW=$(grep '^POSTGRES_PASSWORD=' "$DEPLOY_PATH/.env.production" | cut -d '=' -f2)
+    EXISTING_REDIS_PW=$(grep '^REDIS_PASSWORD=' "$DEPLOY_PATH/.env.production" | cut -d '=' -f2)
+    EXISTING_SECRET_KEY=$(grep '^SECRET_KEY=' "$DEPLOY_PATH/.env.production" | cut -d '=' -f2)
+fi
+
+DB_PASSWORD="${EXISTING_DB_PW:-$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)}"
+REDIS_PASSWORD="${EXISTING_REDIS_PW:-$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)}"
+SECRET_KEY="${EXISTING_SECRET_KEY:-$(openssl rand -hex 32)}"
 
 # -----------------------------------------------------------------------
 # SETUP DIRECTORIES & REPOSITORY
@@ -334,7 +350,13 @@ fi
 # -----------------------------------------------------------------------
 log_section "CLEANING UP OLD CONTAINERS"
 
-$DC -f docker-compose.production.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
+if [[ "$WIPE_VOLUMES" == "true" ]]; then
+    log_warn "Wiping existing volumes as requested..."
+    $DC -f docker-compose.production.yml --env-file "$ENV_FILE" down -v --remove-orphans 2>/dev/null || true
+else
+    $DC -f docker-compose.production.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
+fi
+
 docker image prune -f --filter "dangling=true" 2>/dev/null || true
 log_ok "Old containers removed"
 
