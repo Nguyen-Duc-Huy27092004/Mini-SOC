@@ -6,7 +6,7 @@
 #  Version   : 4.0 (hardened, idempotent, zero-conflict ports)
 # =======================================================================
 set -euo pipefail
-IFS=$'\n\t'
+IFS=$' \n\t'
 
 # -----------------------------------------------------------------------
 # COLOUR HELPERS
@@ -345,8 +345,8 @@ log_section "BUILDING DOCKER IMAGES"
 
 # Validate compose config first
 $DC -f docker-compose.production.yml --env-file "$ENV_FILE" config > /dev/null \
-    || die "docker-compose config validation failed. Check .env.production."
-log_ok "docker-compose config is valid"
+    || die "Docker Compose config validation failed. Check .env.production."
+log_ok "Docker Compose config is valid"
 
 log_info "Building backend image..."
 $DC -f docker-compose.production.yml --env-file "$ENV_FILE" build backend \
@@ -599,24 +599,6 @@ log_ok "Deployment info saved to: $INFO_FILE"
 log_section "SYSTEMD AUTO-START SERVICE"
 
 SYSTEMD_SERVICE="/etc/systemd/system/mini-soc.service"
-cat > "$SYSTEMD_SERVICE" <<SYSTEMD
-[Unit]
-Description=Mini-SOC Docker Compose Application
-Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=${DEPLOY_PATH}
-ExecStart=/usr/bin/env ${DC} -f docker-compose.production.yml --env-file ${ENV_FILE} up -d
-ExecStop=/usr/bin/env ${DC} -f docker-compose.production.yml --env-file ${ENV_FILE} down
-TimeoutStartSec=300
-
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
 
 # Resolve actual binary path for DC command (systemd needs full paths)
 DC_BIN=$(command -v docker)
