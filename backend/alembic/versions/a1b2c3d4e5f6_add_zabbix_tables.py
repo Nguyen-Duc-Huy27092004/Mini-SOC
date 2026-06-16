@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 # revision identifiers, used by Alembic.
 revision = 'a1b2c3d4e5f6'
-down_revision = None  # UPDATE THIS to your latest migration revision
+down_revision = '005_fill_missing_columns'
 branch_labels = None
 depends_on = None
 
