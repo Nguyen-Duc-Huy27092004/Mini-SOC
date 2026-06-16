@@ -65,7 +65,7 @@ api.interceptors.response.use(
       }
     }
 
-    const detail = error.response?.data?.detail || 'Hệ thống gặp sự cố';
+    const detail = error.response?.data?.error?.message || error.response?.data?.detail || 'Hệ thống gặp sự cố';
     return Promise.reject({ ...error, message: detail });
   }
 );

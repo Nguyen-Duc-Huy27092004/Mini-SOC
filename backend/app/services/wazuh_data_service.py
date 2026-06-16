@@ -136,7 +136,7 @@ class WazuhDataService:
             .limit(limit)
         )
         rank_map = {4: "critical", 3: "high", 2: "medium", 1: "low"}
-        rows = (await db.execute(stmt)).all()
+        result = (await db.execute(stmt)).all()
         return [
             RankedServer(
                 agent_id=r[0],
@@ -144,7 +144,7 @@ class WazuhDataService:
                 alert_count=r[2],
                 max_severity=rank_map.get(int(r[3] or 1), "low"),
             )
-            for r in rows
+            for r in result
         ]
 
     async def get_top_attack_ips(self, db: AsyncSession, limit: int = 10) -> List[RankedIp]:
@@ -372,6 +372,29 @@ class WazuhDataService:
             for log, email, name in rows
         ]
         return {"logs": logs, "total": total}
+
+    async def get_user_monitoring(self, db: AsyncSession) -> dict:
+        from sqlalchemy import func, select
+        from datetime import datetime, timedelta, timezone
+        from app.models.event import WazuhEvent
+
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        stmt = (
+            select(WazuhEvent.source_user, func.count(WazuhEvent.id))
+            .where(
+                WazuhEvent.event_timestamp >= since,
+                WazuhEvent.category == "authentication",
+                WazuhEvent.source_user.isnot(None),
+            )
+            .group_by(WazuhEvent.source_user)
+            .order_by(func.count(WazuhEvent.id).desc())
+            .limit(20)
+        )
+        rows = (await db.execute(stmt)).all()
+        return {"users": [{"user": r[0], "events": r[1]} for r in rows]}
+
+    async def get_backup_status(self, db: AsyncSession) -> dict:
+        return {"status": "unavailable", "message": "Tích hợp backup sẽ bổ sung qua agent inventory"}
 
 
 wazuh_data = WazuhDataService()

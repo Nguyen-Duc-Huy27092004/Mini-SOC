@@ -206,6 +206,24 @@ class Settings(BaseSettings):
     WAZUH_ALERTS_FILE: str = "/var/ossec/logs/alerts/alerts.json"
 
     # =========================================================
+    # ZABBIX
+    # =========================================================
+
+    ZABBIX_API_URL: str = "http://localhost/zabbix/api_jsonrpc.php"
+
+    ZABBIX_API_USER: str = "Admin"
+
+    ZABBIX_API_PASSWORD: SecretStr = Field(default=SecretStr("zabbix"))
+
+    # Disable SSL verification for self-signed certs (common in lab setups)
+    ZABBIX_VERIFY_SSL: bool = True
+
+    ZABBIX_TIMEOUT: int = 30
+
+    # Set to False to completely disable Zabbix integration
+    ZABBIX_ENABLED: bool = True
+
+    # =========================================================
     # GEOIP
     # =========================================================
 

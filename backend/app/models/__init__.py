@@ -3,8 +3,16 @@ from app.models.audit import PortalAuditLog
 from app.models.event import AlertSuppression, EndpointInventory, EventRisk, WazuhEvent
 from app.models.incident import AlertAssignment, Incident, IncidentComment, IncidentTimeline
 from app.models.user import Role, Session, User
+from app.models.zabbix import (
+    ZabbixEvent,
+    ZabbixHost,
+    ZabbixMetric,
+    ZabbixProblem,
+    ZabbixTrigger,
+)
 
 __all__ = [
+    # Wazuh / Core
     "Asset",
     "PortalAuditLog",
     "WazuhEvent",
@@ -18,4 +26,10 @@ __all__ = [
     "Role",
     "Session",
     "User",
+    # Zabbix
+    "ZabbixHost",
+    "ZabbixProblem",
+    "ZabbixEvent",
+    "ZabbixTrigger",
+    "ZabbixMetric",
 ]

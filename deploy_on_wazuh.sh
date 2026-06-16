@@ -1,851 +1,583 @@
 #!/bin/bash
+# =======================================================================
+#  Mini-SOC — Full Deployment Script (Wazuh + Zabbix)
+#  Target OS : Ubuntu/Debian Linux (Wazuh server)
+#  Usage     : sudo bash deploy_on_wazuh.sh
+#  Version   : 3.0 (hardened, idempotent, zero-conflict ports)
+# =======================================================================
+set -euo pipefail
+IFS=$'\n\t'
 
-# ============================================================
-# Mini-SOC Deployment Script on Wazuh Server
-# ============================================================
-# Hướng dẫn triển khai tự động Mini-SOC trên server có Wazuh
-# Usage: sudo bash deploy_on_wazuh.sh
-# ============================================================
-
-set -e
-
-# ============================================================
-# COLORS
-# ============================================================
+# -----------------------------------------------------------------------
+# COLOUR HELPERS
+# -----------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
 
-# ============================================================
-# FUNCTIONS
-# ============================================================
+log_info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
+log_ok()      { echo -e "${GREEN}[✓]${NC}    $*"; }
+log_warn()    { echo -e "${YELLOW}[⚠]${NC}    $*"; }
+log_error()   { echo -e "${RED}[✗]${NC}    $*"; }
+log_section() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════════════${NC}\n"; }
+die()         { log_error "$*"; exit 1; }
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+# -----------------------------------------------------------------------
+# MUST BE ROOT
+# -----------------------------------------------------------------------
+[[ "$EUID" -ne 0 ]] && die "Run as root: sudo bash deploy_on_wazuh.sh"
 
-log_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
+# -----------------------------------------------------------------------
+# DETECT DOCKER COMPOSE COMMAND (v1 or v2)
+# -----------------------------------------------------------------------
+if docker compose version &>/dev/null 2>&1; then
+    DC="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    DC="docker-compose"
+else
+    die "Neither 'docker compose' nor 'docker-compose' is available. Install Docker (>= 20.10)."
+fi
+log_ok "Docker Compose detected: $DC"
 
-log_warn() {
-    echo -e "${YELLOW}[⚠]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-# ============================================================
+# -----------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
-# ============================================================
+# -----------------------------------------------------------------------
+log_section "PRE-FLIGHT CHECKS"
 
-log_info "Starting Mini-SOC Deployment on Wazuh Server..."
-echo ""
+command -v docker &>/dev/null || die "Docker not installed."
+log_ok "Docker: $(docker --version)"
+log_ok "Compose: $($DC version --short 2>/dev/null || $DC version | head -1)"
+command -v git    &>/dev/null || die "git not installed."
+log_ok "Git: $(git --version)"
+command -v curl   &>/dev/null || die "curl not installed."
+command -v openssl &>/dev/null || die "openssl not installed."
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-   log_error "This script must be run as root (use: sudo bash deploy_on_wazuh.sh)"
-   exit 1
-fi
+# -----------------------------------------------------------------------
+# WELL-KNOWN PORTS USED BY WAZUH & SYSTEM — NEVER TOUCH THESE
+# -----------------------------------------------------------------------
+RESERVED_PORTS=(22 80 443 514 1514 1515 1516 5601 9200 9300 9600 55000)
 
-log_info "Checking prerequisites..."
+is_port_reserved() {
+    local p="$1"
+    for r in "${RESERVED_PORTS[@]}"; do
+        [[ "$p" == "$r" ]] && return 0
+    done
+    return 1
+}
 
-# Check Docker
-if ! command -v docker &> /dev/null; then
-    log_error "Docker is not installed"
-    exit 1
-fi
-log_success "Docker found: $(docker --version)"
-
-# Check Docker Compose
-if ! command -v docker-compose &> /dev/null; then
-    log_error "Docker Compose is not installed"
-    exit 1
-fi
-log_success "Docker Compose found: $(docker-compose --version)"
-
-# Check Git
-if ! command -v git &> /dev/null; then
-    log_error "Git is not installed"
-    exit 1
-fi
-log_success "Git found: $(git --version)"
-
-# Check if Wazuh is running
-if ! netstat -tlnp | grep -q ":55000\|:1514\|:514"; then
-    log_warn "Wazuh ports not found. Make sure Wazuh is running on this server"
-    read -p "Continue anyway? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+is_port_in_use() {
+    local p="$1"
+    # ss is faster than netstat; fall back to netstat if not available
+    if command -v ss &>/dev/null; then
+        ss -tlnp 2>/dev/null | grep -q ":${p} " && return 0 || return 1
+    else
+        netstat -tlnp 2>/dev/null | grep -q ":${p} " && return 0 || return 1
     fi
-fi
-log_success "Wazuh appears to be running"
+}
 
-echo ""
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-log_info "Configuration Setup"
-echo ""
-
-# Get deployment path
-read -p "Enter deployment path (default: /opt/mini-soc): " DEPLOY_PATH
-DEPLOY_PATH=${DEPLOY_PATH:-/opt/mini-soc}
-
-# Get port
-read -p "Enter Nginx port (default: 2709): " NGINX_PORT
-NGINX_PORT=${NGINX_PORT:-2709}
-
-# Check if port is available
-if netstat -tlnp 2>/dev/null | grep -q ":$NGINX_PORT "; then
-    log_error "Port $NGINX_PORT is already in use"
-    exit 1
+# -----------------------------------------------------------------------
+# WAZUH DETECTION (informational — we do NOT stop if Wazuh isn't running)
+# -----------------------------------------------------------------------
+log_info "Checking Wazuh presence..."
+WAZUH_RUNNING=false
+if is_port_in_use 55000 || is_port_in_use 1514; then
+    WAZUH_RUNNING=true
+    log_ok "Wazuh appears to be running (port 55000 or 1514 detected)"
+else
+    log_warn "Wazuh ports not detected — Wazuh may not be running on this server"
+    log_warn "Mini-SOC will start but Wazuh data will be unavailable until Wazuh is live"
 fi
 
-# Get server IP
+# -----------------------------------------------------------------------
+# CONFIGURATION — INTERACTIVE
+# -----------------------------------------------------------------------
+log_section "CONFIGURATION"
+
+# Deployment path
+read -rp "Deployment path [default: /opt/mini-soc]: " DEPLOY_PATH
+DEPLOY_PATH="${DEPLOY_PATH:-/opt/mini-soc}"
+
+# Choose Mini-SOC port (must not conflict with anything)
+while true; do
+    read -rp "Mini-SOC Nginx port [default: 2709]: " NGINX_PORT
+    NGINX_PORT="${NGINX_PORT:-2709}"
+    if is_port_reserved "$NGINX_PORT"; then
+        log_error "Port $NGINX_PORT is reserved for Wazuh or system services. Choose another."
+    elif is_port_in_use "$NGINX_PORT"; then
+        log_error "Port $NGINX_PORT is already in use. Choose another."
+    else
+        log_ok "Port $NGINX_PORT is available"
+        break
+    fi
+done
+
+# Server IP
 CURRENT_IP=$(hostname -I | awk '{print $1}')
-read -p "Enter server IP for access (default: $CURRENT_IP): " SERVER_IP
-SERVER_IP=${SERVER_IP:-$CURRENT_IP}
+read -rp "Server IP / hostname [default: $CURRENT_IP]: " SERVER_IP
+SERVER_IP="${SERVER_IP:-$CURRENT_IP}"
 
-# Get Wazuh API details
-read -p "Enter Wazuh API URL (default: http://$CURRENT_IP:55000): " WAZUH_API_URL
-WAZUH_API_URL=${WAZUH_API_URL:-"http://$CURRENT_IP:55000"}
-
-read -p "Enter Wazuh API username (default: wazuh): " WAZUH_USER
-WAZUH_USER=${WAZUH_USER:-"wazuh"}
-
-read -sp "Enter Wazuh API password: " WAZUH_PASSWORD
+# ──── WAZUH ────
 echo ""
+log_info "Wazuh API credentials (used to pull agent data):"
+read -rp "  Wazuh API URL   [default: https://$CURRENT_IP:55000]: " WAZUH_API_URL
+WAZUH_API_URL="${WAZUH_API_URL:-"https://$CURRENT_IP:55000"}"
+read -rp "  Wazuh API user  [default: wazuh]: " WAZUH_API_USER
+WAZUH_API_USER="${WAZUH_API_USER:-wazuh}"
+read -rsp "  Wazuh API password: " WAZUH_API_PASSWORD; echo ""
+[[ -z "$WAZUH_API_PASSWORD" ]] && die "Wazuh API password cannot be empty."
 
-# Generate passwords
-DB_PASSWORD=$(openssl rand -base64 32)
-REDIS_PASSWORD=$(openssl rand -base64 32)
-# Use secrets module if available (Python 3.6+), fallback to openssl
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || openssl rand -hex 32)
-
-# Export variables for Python subprocess
-export NGINX_PORT DB_PASSWORD REDIS_PASSWORD SECRET_KEY
-export SERVER_IP WAZUH_API_URL WAZUH_USER WAZUH_PASSWORD
-
-log_success "Configuration generated"
+# ──── ZABBIX ────
 echo ""
+log_info "Zabbix API credentials (leave URL empty to disable Zabbix):"
+read -rp "  Zabbix API URL  [e.g. http://$CURRENT_IP/zabbix/api_jsonrpc.php, or ENTER to disable]: " ZABBIX_API_URL
+if [[ -z "$ZABBIX_API_URL" ]]; then
+    ZABBIX_ENABLED="false"
+    ZABBIX_API_USER="Admin"
+    ZABBIX_API_PASSWORD="zabbix"
+    log_warn "Zabbix disabled. You can enable it later by updating .env.production"
+else
+    ZABBIX_ENABLED="true"
+    read -rp "  Zabbix user     [default: Admin]: " ZABBIX_API_USER
+    ZABBIX_API_USER="${ZABBIX_API_USER:-Admin}"
+    read -rsp "  Zabbix password: " ZABBIX_API_PASSWORD; echo ""
+    [[ -z "$ZABBIX_API_PASSWORD" ]] && die "Zabbix password cannot be empty when Zabbix is enabled."
+    log_ok "Zabbix enabled → $ZABBIX_API_URL"
+fi
 
-# ============================================================
-# SETUP DIRECTORIES
-# ============================================================
+# ──── ADMIN USER ────
+echo ""
+log_info "Mini-SOC admin account:"
+read -rp "  Admin username  [default: admin]: " ADMIN_USER
+ADMIN_USER="${ADMIN_USER:-admin}"
 
-log_info "Setting up directories..."
+while true; do
+    read -rp "  Admin email: " ADMIN_EMAIL
+    [[ "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] && break
+    log_error "Invalid email format, try again."
+done
 
-if [ -d "$DEPLOY_PATH" ]; then
-    log_warn "Directory $DEPLOY_PATH already exists"
-    read -p "Continue with existing directory? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
+while true; do
+    read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD; echo ""
+    [[ ${#ADMIN_PASSWORD} -ge 8 ]] && break
+    log_error "Password too short (< 8 chars)."
+done
+
+# ──── GENERATE SECRETS ────
+DB_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
+REDIS_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
+SECRET_KEY=$(openssl rand -hex 32)
+
+# -----------------------------------------------------------------------
+# SETUP DIRECTORIES & REPOSITORY
+# -----------------------------------------------------------------------
+log_section "DIRECTORY & REPOSITORY SETUP"
+
+if [[ -d "$DEPLOY_PATH" ]]; then
+    log_warn "Directory $DEPLOY_PATH already exists."
+    read -rp "  Continue with existing directory? (y/n): " _ans
+    [[ "$_ans" =~ ^[Yy]$ ]] || exit 0
 else
     mkdir -p "$DEPLOY_PATH"
-    log_success "Directory created: $DEPLOY_PATH"
+    log_ok "Directory created: $DEPLOY_PATH"
 fi
 
 cd "$DEPLOY_PATH"
 
-# ============================================================
-# CLONE REPOSITORY
-# ============================================================
-
-if [ ! -d ".git" ]; then
-    log_info "Cloning repository..."
-    read -p "Enter repository URL: " REPO_URL
+if [[ ! -d ".git" ]]; then
+    read -rp "  Git repository URL: " REPO_URL
+    [[ -z "$REPO_URL" ]] && die "Repository URL cannot be empty."
     git clone "$REPO_URL" .
-    log_success "Repository cloned"
+    log_ok "Repository cloned"
 else
-    log_info "Repository already exists, pulling latest..."
-    git pull origin main
-    log_success "Repository updated"
+    log_info "Repository exists — pulling latest changes..."
+    git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || log_warn "git pull failed — continuing with current code"
+    log_ok "Repository up to date"
 fi
 
-echo ""
+# -----------------------------------------------------------------------
+# DETECT WAZUH ALERTS PATH
+# -----------------------------------------------------------------------
+log_section "WAZUH ALERTS PATH"
 
-# ============================================================
-# CONFIGURE DOCKER COMPOSE
-# ============================================================
-
-log_info "Configuring docker-compose.production.yml..."
-
-# Backup original
-cp docker-compose.production.yml docker-compose.production.yml.bak
-
-# docker-compose.production.yml already uses ${NGINX_PORT:-2709} parameterization.
-# No need to rewrite the YAML file.
-
-log_success "docker-compose.production.yml configured"
-echo ""
-
-# ============================================================
-# CREATE .env.production
-# ============================================================
-
-log_info "Determining Wazuh alerts mount path..."
-if [ -d "/var/ossec/logs/alerts" ]; then
-    WAZUH_MOUNT_PATH="/var/ossec/logs/alerts"
+if [[ -d "/var/ossec/logs/alerts" ]]; then
+    WAZUH_ALERTS_HOST_PATH="/var/ossec/logs/alerts"
+    log_ok "Found Wazuh alerts directory: $WAZUH_ALERTS_HOST_PATH"
+    # Ensure container can read the file
+    chmod 755 /var/ossec/logs/alerts 2>/dev/null || true
+    [[ -f "/var/ossec/logs/alerts/alerts.json" ]] && chmod 644 /var/ossec/logs/alerts/alerts.json 2>/dev/null || true
 else
-    WAZUH_MOUNT_PATH="$DEPLOY_PATH/data/wazuh"
+    log_warn "/var/ossec/logs/alerts not found — creating local stub directory"
+    mkdir -p "$DEPLOY_PATH/data/wazuh"
+    chmod 755 "$DEPLOY_PATH/data/wazuh"
+    WAZUH_ALERTS_HOST_PATH="$DEPLOY_PATH/data/wazuh"
 fi
 
-log_info "Creating .env.production..."
+# -----------------------------------------------------------------------
+# GENERATE .env.production
+# -----------------------------------------------------------------------
+log_section "GENERATING .env.production"
 
-cat > .env.production << EOF
-# ========================================
+cat > .env.production <<ENVFILE
+# ================================================================
 # MINI SOC PRODUCTION CONFIGURATION
-# ========================================
-# This file is automatically generated during deployment
-# Last updated: $(date)
+# Generated by deploy_on_wazuh.sh on $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+# ================================================================
 
-# =========================================================
-# CORE SETTINGS
-# =========================================================
+# ── Core ─────────────────────────────────────────────────────────
+PROJECT_NAME=Mini SOC Portal
+ENV=production
+DEBUG=false
+API_V1_STR=/api/v1
+LOG_LEVEL=INFO
 
-PROJECT_NAME="Mini SOC Portal"
-ENV="production"
-DEBUG="false"
-API_V1_STR="/api/v1"
-LOG_LEVEL="INFO"
+# ── Security ─────────────────────────────────────────────────────
+SECRET_KEY=${SECRET_KEY}
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=7
+WS_TICKET_EXPIRE_SECONDS=60
+LOGIN_RATE_LIMIT_PER_MINUTE=10
+RATE_LIMIT_PER_MINUTE=100
+BACKEND_CORS_ORIGINS=http://${SERVER_IP}:${NGINX_PORT},http://localhost:${NGINX_PORT}
+COOKIE_SECURE=false
+COOKIE_DOMAIN=
+CSRF_VALIDATE_ORIGIN=false
 
-# =========================================================
-# SECURITY
-# =========================================================
+# ── PostgreSQL ───────────────────────────────────────────────────
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=mini_soc_prod
+POSTGRES_SERVER=db
+POSTGRES_PORT=5432
+DB_POOL_SIZE=20
+DB_MAX_OVERFLOW=40
+DB_POOL_TIMEOUT=30
+DB_POOL_RECYCLE=1800
 
-# JWT Configuration
-SECRET_KEY="$SECRET_KEY"
-ACCESS_TOKEN_EXPIRE_MINUTES="15"
-REFRESH_TOKEN_EXPIRE_DAYS="7"
-WS_TICKET_EXPIRE_SECONDS="60"
+# ── Redis ────────────────────────────────────────────────────────
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=${REDIS_PASSWORD}
+REDIS_DB=0
 
-# Rate Limiting
-LOGIN_RATE_LIMIT_PER_MINUTE="10"
-RATE_LIMIT_PER_MINUTE="100"
-WS_RATE_LIMIT_PER_MINUTE="120"
+# ── Wazuh ────────────────────────────────────────────────────────
+WAZUH_API_URL=${WAZUH_API_URL}
+WAZUH_API_USER=${WAZUH_API_USER}
+WAZUH_API_PASSWORD=${WAZUH_API_PASSWORD}
+WAZUH_VERIFY_SSL=false
+WAZUH_ALERTS_FILE=/var/ossec/logs/alerts/alerts.json
+WAZUH_ALERTS_HOST_PATH=${WAZUH_ALERTS_HOST_PATH}
 
-# CORS Configuration
-BACKEND_CORS_ORIGINS="http://$SERVER_IP:$NGINX_PORT,http://localhost:$NGINX_PORT,http://127.0.0.1:$NGINX_PORT"
+# ── Zabbix ───────────────────────────────────────────────────────
+ZABBIX_API_URL=${ZABBIX_API_URL:-http://localhost/zabbix/api_jsonrpc.php}
+ZABBIX_API_USER=${ZABBIX_API_USER}
+ZABBIX_API_PASSWORD=${ZABBIX_API_PASSWORD}
+ZABBIX_VERIFY_SSL=false
+ZABBIX_TIMEOUT=30
+ZABBIX_ENABLED=${ZABBIX_ENABLED}
 
-# Cookie Security
-COOKIE_SECURE="false"
-COOKIE_DOMAIN=""
-CSRF_VALIDATE_ORIGIN="false"
+# ── Frontend build-time URLs ─────────────────────────────────────
+VITE_API_URL=http://${SERVER_IP}:${NGINX_PORT}/api/v1
+VITE_WS_URL=ws://${SERVER_IP}:${NGINX_PORT}/ws
 
-# Default Admin Password (CHANGE AFTER FIRST LOGIN)
-DEFAULT_ADMIN_PASSWORD="ChangeMe123!"
+# ── Nginx port ───────────────────────────────────────────────────
+NGINX_PORT=${NGINX_PORT}
 
-# =========================================================
-# DATABASE (PostgreSQL)
-# =========================================================
+# ── GeoIP / Observability ────────────────────────────────────────
+GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
+ENABLE_SENTRY=false
+SENTRY_DSN=
 
-POSTGRES_SERVER="db"
-POSTGRES_PORT="5432"
-POSTGRES_USER="postgres"
-POSTGRES_PASSWORD="$DB_PASSWORD"
-POSTGRES_DB="mini_soc_prod"
+# ── Default admin (required by backend boot) ─────────────────────
+DEFAULT_ADMIN_PASSWORD=ChangeMe123!
+ENVFILE
 
-# Database Connection Pool
-DB_POOL_SIZE="20"
-DB_MAX_OVERFLOW="40"
-DB_POOL_TIMEOUT="30"
-DB_POOL_RECYCLE="1800"
+log_ok ".env.production written"
 
-# =========================================================
-# REDIS
-# =========================================================
+# Verify critical keys
+for KEY in POSTGRES_PASSWORD REDIS_PASSWORD SECRET_KEY WAZUH_API_PASSWORD; do
+    grep -q "^${KEY}=" .env.production || die ".env.production is missing ${KEY}"
+done
+log_ok "All required variables present in .env.production"
 
-REDIS_HOST="redis"
-REDIS_PORT="6379"
-REDIS_PASSWORD="$REDIS_PASSWORD"
-REDIS_DB="0"
+# Load vars so they're available in this shell for subsequent docker commands
+set -a; source .env.production; set +a
 
-# =========================================================
-# OPENSEARCH
-# =========================================================
+# -----------------------------------------------------------------------
+# CLEAN UP OLD CONTAINERS (idempotent)
+# -----------------------------------------------------------------------
+log_section "CLEANING UP OLD CONTAINERS"
 
-OPENSEARCH_HOSTS="https://opensearch:9200"
-OPENSEARCH_USER="admin"
-OPENSEARCH_PASSWORD="admin"
-OPENSEARCH_VERIFY_CERTS="false"
-OPENSEARCH_SSL_SHOW_WARN="false"
+$DC -f docker-compose.production.yml --env-file .env.production down --remove-orphans 2>/dev/null || true
+docker image prune -f --filter "dangling=true" 2>/dev/null || true
+log_ok "Old containers removed"
 
-# =========================================================
-# WAZUH INTEGRATION
-# =========================================================
-
-# Wazuh API Configuration
-WAZUH_API_URL="$WAZUH_API_URL"
-WAZUH_API_USER="$WAZUH_USER"
-WAZUH_API_PASSWORD="$WAZUH_PASSWORD"
-WAZUH_VERIFY_SSL="false"
-
-# Wazuh Alerts File
-WAZUH_ALERTS_FILE="/var/ossec/logs/alerts/alerts.json"
-
-# =========================================================
-# GEOIP
-# =========================================================
-
-GEOIP_DB_PATH="/usr/share/GeoIP/GeoLite2-City.mmdb"
-
-# =========================================================
-# OBSERVABILITY
-# =========================================================
-
-ENABLE_SENTRY="false"
-SENTRY_DSN=""
-
-# =========================================================
-# APPLICATION URLs
-# =========================================================
-
-# Frontend Configuration
-FRONTEND_URL="http://$SERVER_IP:$NGINX_PORT"
-VITE_API_URL="http://$SERVER_IP:$NGINX_PORT/api/v1"
-VITE_WS_URL="ws://$SERVER_IP:$NGINX_PORT/ws"
-
-# Backend Configuration  
-BACKEND_URL="http://$SERVER_IP:$NGINX_PORT"
-HOST="0.0.0.0"
-PORT="8000"
-WORKERS="4"
-
-# =========================================================
-# DEPLOYMENT INFO & DOCKER VOLUMES
-# =========================================================
-
-NGINX_PORT="$NGINX_PORT"
-
-# Wazuh Alerts Mount Path
-WAZUH_ALERTS_HOST_PATH="$WAZUH_MOUNT_PATH"
-
-# Deployed at: $DEPLOY_PATH
-# Nginx Port: $NGINX_PORT
-# Server IP: $SERVER_IP
-# Deployment Date: $(date)
-
-EOF
-
-log_success ".env.production created"
-echo ""
-log_info "Configuration file details:"
-echo "  - SECRET_KEY: Generated"
-echo "  - Database Password: Generated"
-echo "  - Redis Password: Generated"
-echo "  - Wazuh API: $WAZUH_API_URL"
-echo "  - Server Access: http://$SERVER_IP:$NGINX_PORT"
-echo ""
-
-# Verify .env.production was created successfully
-if [ ! -f ".env.production" ]; then
-    log_error ".env.production file was not created!"
-    exit 1
-fi
-
-# Verify critical variables in .env.production
-log_info "Verifying .env.production content..."
-if ! grep -q "POSTGRES_PASSWORD=" .env.production; then
-    log_error "POSTGRES_PASSWORD not found in .env.production"
-    exit 1
-fi
-if ! grep -q "REDIS_PASSWORD=" .env.production; then
-    log_error "REDIS_PASSWORD not found in .env.production"
-    exit 1
-fi
-if ! grep -q "SECRET_KEY=" .env.production; then
-    log_error "SECRET_KEY not found in .env.production"
-    exit 1
-fi
-log_success "All required variables verified in .env.production"
-echo ""
-
-# ============================================================
-# CHECK WAZUH ALERTS FILE
-# ============================================================
-
-log_info "Checking Wazuh alerts file..."
-
-if [ -f "/var/ossec/logs/alerts/alerts.json" ]; then
-    log_success "Found Wazuh alerts at /var/ossec/logs/alerts/alerts.json"
-    
-    # Check permissions
-    if [ ! -r "/var/ossec/logs/alerts/alerts.json" ]; then
-        log_warn "Fixing permissions for alerts file..."
-        chmod 755 /var/ossec/logs/alerts
-        chmod 644 /var/ossec/logs/alerts/alerts.json
-        log_success "Permissions fixed"
-    fi
-else
-    log_warn "Wazuh alerts file not found at expected location"
-    log_info "Mini-SOC will try to use Wazuh API instead"
-fi
-
-echo ""
-
-# ============================================================
-# CLEANUP OLD CONTAINERS
-# ============================================================
-
-log_info "Cleaning up old containers and images..."
-
-# Stop and remove old containers
-docker-compose -f docker-compose.production.yml down -v 2>/dev/null || true
-
-# Remove dangling images
-docker image prune -f --filter "dangling=true" || true
-
-log_success "Cleanup complete"
-echo ""
-
-# ============================================================
-# CREATE WAZUH ALERTS DIRECTORY
-# ============================================================
-
-log_info "Creating Wazuh alerts mount directory..."
-mkdir -p "$DEPLOY_PATH/data/wazuh"
-chmod 755 "$DEPLOY_PATH/data/wazuh"
-log_success "Wazuh data directory created"
-echo ""
-
-# ============================================================
+# -----------------------------------------------------------------------
 # BUILD IMAGES
-# ============================================================
+# -----------------------------------------------------------------------
+log_section "BUILDING DOCKER IMAGES"
 
-log_info "Building Docker images (this may take 5-10 minutes)..."
-log_info "Using .env.production from: $PWD/.env.production"
+# Validate compose config first
+$DC -f docker-compose.production.yml --env-file .env.production config > /dev/null \
+    || die "docker-compose config validation failed. Check .env.production."
+log_ok "docker-compose config is valid"
 
-# Export environment variables to be used by docker-compose
-set -a
-if ! source .env.production 2>/dev/null; then
-    log_error ".env.production has syntax errors! Check file format."
-    cat .env.production | head -20
-    exit 1
-fi
-set +a
-
-log_success "Environment variables loaded successfully"
-
-# Build backend first
 log_info "Building backend image..."
-if ! docker-compose -f docker-compose.production.yml build backend 2>&1 | tee /tmp/backend_build.log; then
-    log_error "Backend build failed! Check logs:"
-    tail -50 /tmp/backend_build.log
-    exit 1
-fi
-log_success "Backend image built"
+$DC -f docker-compose.production.yml --env-file .env.production build backend \
+    2>&1 | tee /tmp/soc_build_backend.log \
+    || { log_error "Backend build failed:"; tail -40 /tmp/soc_build_backend.log; die "Aborting."; }
+log_ok "Backend image built"
 
-# Build frontend
-log_info "Building frontend image..."
-if ! docker-compose -f docker-compose.production.yml build frontend 2>&1 | tee /tmp/frontend_build.log; then
-    log_error "Frontend build failed! Check logs:"
-    tail -50 /tmp/frontend_build.log
-    exit 1
-fi
-log_success "Frontend image built"
+log_info "Building frontend image (bakes server URL at build time)..."
+$DC -f docker-compose.production.yml --env-file .env.production build frontend \
+    2>&1 | tee /tmp/soc_build_frontend.log \
+    || { log_error "Frontend build failed:"; tail -40 /tmp/soc_build_frontend.log; die "Aborting."; }
+log_ok "Frontend image built"
 
-echo ""
-
-# ============================================================
+# -----------------------------------------------------------------------
 # START DATABASE & REDIS FIRST
-# ============================================================
+# -----------------------------------------------------------------------
+log_section "STARTING DATABASE & REDIS"
 
-log_info "Starting database and Redis services first..."
+$DC -f docker-compose.production.yml --env-file .env.production up -d db redis
 
-docker-compose -f docker-compose.production.yml up -d db redis
-
-log_info "Waiting for database to be ready..."
+log_info "Waiting for PostgreSQL..."
 DB_READY=false
-for i in {1..60}; do
-    if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
-        log_success "✓ PostgreSQL is ready"
+for i in $(seq 1 60); do
+    if $DC -f docker-compose.production.yml --env-file .env.production \
+        exec -T db pg_isready -U postgres -d mini_soc_prod &>/dev/null; then
+        log_ok "PostgreSQL is ready (attempt $i)"
         DB_READY=true
         break
     fi
-    echo -n "."
-    sleep 2
-done
-echo ""
+    printf "."; sleep 2
+done; echo ""
+[[ "$DB_READY" == "true" ]] || { $DC -f docker-compose.production.yml logs db; die "PostgreSQL failed to start."; }
 
-if [ "$DB_READY" = false ]; then
-    log_error "Database failed to start after 120 seconds. Showing logs:"
-    docker-compose -f docker-compose.production.yml logs db
-    exit 1
-fi
-
-# Wait for Redis
 log_info "Waiting for Redis..."
 REDIS_READY=false
-for i in {1..30}; do
-    if docker-compose -f docker-compose.production.yml exec -T redis redis-cli -a "$REDIS_PASSWORD" ping &> /dev/null 2>&1; then
-        log_success "✓ Redis is ready"
+for i in $(seq 1 30); do
+    if $DC -f docker-compose.production.yml --env-file .env.production \
+        exec -T redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+        log_ok "Redis is ready (attempt $i)"
         REDIS_READY=true
         break
     fi
-    echo -n "."
-    sleep 1
-done
-echo ""
+    printf "."; sleep 1
+done; echo ""
+[[ "$REDIS_READY" == "true" ]] || log_warn "Redis auth check failed — may still be starting. Continuing..."
 
-if [ "$REDIS_READY" = false ]; then
-    log_warn "Redis authentication check failed (this may be normal during startup)"
-fi
+# -----------------------------------------------------------------------
+# DATABASE MIGRATIONS
+# -----------------------------------------------------------------------
+log_section "RUNNING DATABASE MIGRATIONS"
 
-echo ""
-
-# ============================================================
-# RUN DATABASE MIGRATIONS BEFORE BACKEND STARTS
-# ============================================================
-
-log_info "Running database migrations BEFORE starting backend..."
-
-# Run migrations using one-off container
-if ! docker-compose -f docker-compose.production.yml run --rm \
+$DC -f docker-compose.production.yml --env-file .env.production run --rm \
     -e POSTGRES_SERVER=db \
     -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+    -e POSTGRES_DB=mini_soc_prod \
     -e SECRET_KEY="$SECRET_KEY" \
-    backend sh -c "alembic upgrade head" 2>&1 | tee /tmp/migration.log; then
-    log_error "Database migration failed! Check logs:"
-    cat /tmp/migration.log
-    docker-compose -f docker-compose.production.yml logs db
-    exit 1
-fi
+    backend sh -c "alembic upgrade head" \
+    2>&1 | tee /tmp/soc_migration.log \
+    || { log_error "Migration failed:"; cat /tmp/soc_migration.log; \
+         $DC -f docker-compose.production.yml logs db; die "Aborting."; }
+log_ok "Migrations applied successfully"
 
-log_success "✅ Database migrations completed SUCCESSFULLY"
-echo ""
+# -----------------------------------------------------------------------
+# START ALL SERVICES
+# -----------------------------------------------------------------------
+log_section "STARTING ALL SERVICES"
 
-# ============================================================
-# START REMAINING SERVICES
-# ============================================================
-
-log_info "Starting backend, frontend, and nginx..."
-
-# Verify docker-compose config is valid
-if ! docker-compose -f docker-compose.production.yml config &> /dev/null; then
-    log_error "Docker compose configuration error. Check .env.production format"
-    docker-compose -f docker-compose.production.yml config
-    exit 1
-fi
-
-# Start all services
-docker-compose -f docker-compose.production.yml up -d
-
-log_info "Waiting for backend to be ready..."
-log_info "Backend has 15s start_period + health checks"
+$DC -f docker-compose.production.yml --env-file .env.production up -d
 
 # Wait for backend health
+log_info "Waiting for backend (up to 120s)..."
 BACKEND_READY=false
-for i in {1..60}; do
-    if curl -sf http://localhost:8000/api/v1/health/ready > /dev/null 2>&1; then
-        log_success "✓ Backend is healthy"
+for i in $(seq 1 60); do
+    if curl -sf "http://localhost:8000/api/v1/health/ready" > /dev/null 2>&1; then
+        log_ok "Backend healthy (attempt $i)"
         BACKEND_READY=true
         break
     fi
-    echo -n "."
-    sleep 2
-done
-echo ""
-
-if [ "$BACKEND_READY" = false ]; then
-    log_error "Backend failed to start. Showing logs:"
-    docker-compose -f docker-compose.production.yml logs --tail=100 backend
-    exit 1
+    printf "."; sleep 2
+done; echo ""
+if [[ "$BACKEND_READY" != "true" ]]; then
+    $DC -f docker-compose.production.yml --env-file .env.production logs --tail=80 backend
+    die "Backend failed to become healthy."
 fi
 
-# Wait for nginx
-log_info "Waiting for Nginx..."
+# Wait for Nginx (the public-facing port)
+log_info "Waiting for Nginx on port $NGINX_PORT..."
 NGINX_READY=false
-for i in {1..30}; do
-    if curl -sf http://localhost:$NGINX_PORT/api/v1/health/ready > /dev/null 2>&1; then
-        log_success "✓ Nginx is serving requests"
+for i in $(seq 1 30); do
+    if curl -sf "http://localhost:$NGINX_PORT/api/v1/health/ready" > /dev/null 2>&1; then
+        log_ok "Nginx is serving (attempt $i)"
         NGINX_READY=true
         break
     fi
-    echo -n "."
-    sleep 2
-done
-echo ""
+    printf "."; sleep 2
+done; echo ""
+[[ "$NGINX_READY" == "true" ]] || log_warn "Nginx not responding yet — may still be starting."
 
-if [ "$NGINX_READY" = false ]; then
-    log_warn "Nginx not responding yet (frontend may still be building)"
-fi
-
-echo ""
-
-# ============================================================
-# VERIFY DEPLOYMENT
-# ============================================================
-
-log_info "Final deployment verification..."
-
-# Check all services status
-docker-compose -f docker-compose.production.yml ps
-
-echo ""
-
-# ============================================================
+# -----------------------------------------------------------------------
 # CREATE ADMIN USER
-# ============================================================
+# -----------------------------------------------------------------------
+log_section "CREATING ADMIN USER"
 
-log_info "Creating admin user..."
-echo ""
-
-read -p "Enter admin username (default: admin): " ADMIN_USER
-ADMIN_USER=${ADMIN_USER:-"admin"}
-
-while true; do
-    read -p "Enter admin email: " ADMIN_EMAIL
-    if [[ "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        break
-    else
-        log_error "Invalid email format. Please try again."
-    fi
-done
-
-while true; do
-    read -sp "Enter admin password (min 8 characters): " ADMIN_PASSWORD
-    echo ""
-    if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
-        break
-    else
-        log_error "Password must be at least 8 characters"
-    fi
-done
-
-log_info "Creating admin user in database..."
-if docker-compose -f docker-compose.production.yml exec -T backend \
-    python -c "import sys; sys.path.insert(0, '/app'); from app.scripts.create_admin_user import main; import asyncio; asyncio.run(main())" \
+if $DC -f docker-compose.production.yml --env-file .env.production exec -T backend \
+    python /app/app/scripts/create_admin_user.py \
     --email "$ADMIN_EMAIL" \
     --password "$ADMIN_PASSWORD" \
-    --user "$ADMIN_USER" 2>&1 | tee /tmp/create_admin.log; then
-    log_success "✅ Admin user created successfully"
+    --user "$ADMIN_USER" \
+    2>&1 | tee /tmp/soc_admin.log; then
+    log_ok "Admin user created: $ADMIN_EMAIL"
 else
-    log_warn "Admin user creation may have failed. Check output above."
-    log_info "You can create admin manually later by running:"
-    echo "  docker-compose -f docker-compose.production.yml exec backend python app/scripts/create_admin_user.py --email <email> --password <password>"
+    log_warn "Admin creation returned non-zero (may already exist — check /tmp/soc_admin.log)"
+    cat /tmp/soc_admin.log
 fi
 
-echo ""
-
-# ============================================================
-# DISPLAY SUMMARY
-# ============================================================
-
-log_success "Deployment Complete!"
-echo ""
-echo "==========================================================="
-echo "  🎉 MINI-SOC DEPLOYMENT SUMMARY 🎉"
-echo "==========================================================="
-echo ""
-echo -e "${GREEN}📍 Access URLs:${NC}"
-echo "  Web UI:           http://$SERVER_IP:$NGINX_PORT"
-echo "  API Documentation: http://$SERVER_IP:$NGINX_PORT/api/v1/docs (If DEBUG=true)"
-echo "  Health Check:     http://$SERVER_IP:$NGINX_PORT/api/v1/health/ready"
-echo ""
-echo -e "${GREEN}👤 Credentials:${NC}"
-echo "  Admin User:       $ADMIN_USER"
-echo "  Admin Email:      $ADMIN_EMAIL"
-echo "  Password:         (stored securely)"
-echo ""
-echo -e "${GREEN}🔧 Configuration:${NC}"
-echo "  Deployment Path:  $DEPLOY_PATH"
-echo "  Access Port:      $NGINX_PORT"
-echo "  Server IP:        $SERVER_IP"
-echo "  Wazuh API:        $WAZUH_API_URL"
-echo "  Env File:         $DEPLOY_PATH/.env.production"
-echo ""
-echo -e "${GREEN}🗄️  Database & Cache:${NC}"
-echo "  PostgreSQL:       Running in container (db)"
-echo "  Redis:            Running in container (redis)"
-echo ""
-echo "==========================================================="
-echo ""
-
-# ============================================================
+# -----------------------------------------------------------------------
 # POST-DEPLOYMENT VALIDATION
-# ============================================================
+# -----------------------------------------------------------------------
+log_section "POST-DEPLOYMENT VALIDATION"
 
-log_info "Running post-deployment validation..."
-echo ""
+FAIL=0
 
-VALIDATION_FAILED=false
-
-# Test 1: All containers running
-log_info "[1/8] Checking container status..."
-CONTAINERS_UP=$(docker-compose -f docker-compose.production.yml ps --services --filter "status=running" | wc -l)
-CONTAINERS_EXPECTED=5  # db, redis, backend, frontend, nginx
-if [ "$CONTAINERS_UP" -ge "$CONTAINERS_EXPECTED" ]; then
-    log_success "✓ All containers are running ($CONTAINERS_UP/$CONTAINERS_EXPECTED)"
+# 1. Containers
+log_info "[1/6] Container status..."
+RUNNING=$($DC -f docker-compose.production.yml --env-file .env.production ps --services --filter "status=running" 2>/dev/null | wc -l)
+EXPECTED=5   # db, redis, backend, frontend, nginx
+if [[ "$RUNNING" -ge "$EXPECTED" ]]; then
+    log_ok "All $RUNNING containers running"
 else
-    log_error "✗ Only $CONTAINERS_UP/$CONTAINERS_EXPECTED containers running!"
-    VALIDATION_FAILED=true
+    log_error "Only $RUNNING/$EXPECTED containers running!"
+    FAIL=1
 fi
 
-# Test 2: Database connectivity
-log_info "[2/8] Testing database connectivity..."
-if docker-compose -f docker-compose.production.yml exec -T db pg_isready -U postgres &> /dev/null; then
-    log_success "✓ PostgreSQL is accessible"
+# 2. PostgreSQL
+log_info "[2/6] PostgreSQL connectivity..."
+if $DC -f docker-compose.production.yml --env-file .env.production exec -T db \
+    pg_isready -U postgres -d mini_soc_prod &>/dev/null; then
+    log_ok "PostgreSQL accessible"
 else
-    log_error "✗ PostgreSQL connection failed!"
-    VALIDATION_FAILED=true
+    log_error "PostgreSQL not accessible!"; FAIL=1
 fi
 
-# Test 3: Check migrations applied
-log_info "[3/8] Verifying database migrations..."
-MIGRATION_VERSION=$(docker-compose -f docker-compose.production.yml exec -T db \
-    psql -U postgres -d mini_soc_prod -tAc "SELECT version_num FROM alembic_version" 2>/dev/null || echo "none")
-if [ "$MIGRATION_VERSION" = "005_fill_missing_columns" ]; then
-    log_success "✓ Latest migration applied: $MIGRATION_VERSION"
-elif [ "$MIGRATION_VERSION" != "none" ]; then
-    log_warn "⚠ Migration version: $MIGRATION_VERSION (expected: 005_fill_missing_columns)"
+# 3. Migration version (dynamic — does not hardcode a specific version)
+log_info "[3/6] Migration version..."
+MIG_VER=$($DC -f docker-compose.production.yml --env-file .env.production exec -T db \
+    psql -U postgres -d mini_soc_prod -tAc \
+    "SELECT version_num FROM alembic_version ORDER BY 1 DESC LIMIT 1;" 2>/dev/null || echo "none")
+if [[ "$MIG_VER" != "none" && -n "$MIG_VER" ]]; then
+    log_ok "Migration applied: $MIG_VER"
 else
-    log_error "✗ No migrations applied!"
-    VALIDATION_FAILED=true
+    log_error "No migration detected!"; FAIL=1
 fi
 
-# Test 4: Redis connectivity
-log_info "[4/8] Testing Redis connectivity..."
-if docker-compose -f docker-compose.production.yml exec -T redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
-    log_success "✓ Redis is accessible"
+# 4. Redis
+log_info "[4/6] Redis..."
+if $DC -f docker-compose.production.yml --env-file .env.production exec -T redis \
+    redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+    log_ok "Redis accessible"
 else
-    log_warn "⚠ Redis ping failed (may still be initializing)"
+    log_warn "Redis ping failed — may still be starting"
 fi
 
-# Test 5: Backend health endpoint
-log_info "[5/8] Testing backend API..."
-HEALTH_RESPONSE=$(curl -sf http://localhost:$NGINX_PORT/api/v1/health/ready 2>/dev/null)
-if echo "$HEALTH_RESPONSE" | grep -q "ok"; then
-    log_success "✓ Backend health check passed"
+# 5. Backend health (via Nginx)
+log_info "[5/6] Backend API via Nginx..."
+HEALTH=$(curl -sf "http://localhost:$NGINX_PORT/api/v1/health/ready" 2>/dev/null || echo "")
+if echo "$HEALTH" | grep -qi "ok\|healthy\|ready"; then
+    log_ok "Backend health check passed"
 else
-    log_error "✗ Backend health check failed!"
-    log_info "Response: $HEALTH_RESPONSE"
-    VALIDATION_FAILED=true
+    log_error "Backend health check failed (response: $HEALTH)"; FAIL=1
 fi
 
-# Test 6: Frontend accessibility
-log_info "[6/8] Testing frontend..."
-FRONTEND_HTTP=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:$NGINX_PORT/ 2>/dev/null)
-if [ "$FRONTEND_HTTP" = "200" ]; then
-    log_success "✓ Frontend is accessible"
+# 6. Frontend
+log_info "[6/6] Frontend..."
+HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://localhost:$NGINX_PORT/" 2>/dev/null || echo "000")
+if [[ "$HTTP_CODE" == "200" ]]; then
+    log_ok "Frontend accessible (HTTP 200)"
 else
-    log_error "✗ Frontend returned HTTP $FRONTEND_HTTP"
-    VALIDATION_FAILED=true
+    log_error "Frontend returned HTTP $HTTP_CODE"; FAIL=1
 fi
 
-# Test 7: Collector service
-log_info "[7/8] Checking collector service..."
-sleep 3  # Give collector time to start
-COLLECTOR_LOGS=$(docker-compose -f docker-compose.production.yml logs backend 2>/dev/null | grep -i "collector_started" || echo "")
-if [ -n "$COLLECTOR_LOGS" ]; then
-    log_success "✓ Collector service started"
-else
-    log_warn "⚠ Collector service not detected (check logs manually)"
-fi
-
-# Test 8: Check for critical errors
-log_info "[8/8] Scanning for critical errors in logs..."
-CRITICAL_ERRORS=$(docker-compose -f docker-compose.production.yml logs 2>/dev/null | grep -iE "critical error|fatal|traceback.*error" | wc -l)
-if [ "$CRITICAL_ERRORS" -eq 0 ]; then
-    log_success "✓ No critical errors in logs"
-else
-    log_warn "⚠ Found $CRITICAL_ERRORS potential errors in logs (review manually)"
-fi
-
-echo ""
-
-# ============================================================
-# VALIDATION RESULT
-# ============================================================
-
-if [ "$VALIDATION_FAILED" = true ]; then
-    echo ""
-    log_error "═══════════════════════════════════════"
-    log_error "⚠️  DEPLOYMENT VALIDATION FAILED"
-    log_error "═══════════════════════════════════════"
-    echo ""
-    log_info "Some validation tests failed. System may not be fully functional."
-    log_info "Troubleshooting steps:"
-    echo "  1. Check container logs: docker-compose -f docker-compose.production.yml logs"
-    echo "  2. Verify environment: cat .env.production"
-    echo "  3. Restart services: docker-compose -f docker-compose.production.yml restart"
-    echo "  4. Run debug script: bash debug_deployment.sh (if available)"
-    echo ""
-    log_warn "System is running but may have issues. Review logs before proceeding."
-    echo ""
-else
-    echo ""
-    log_success "═══════════════════════════════════════"
-    log_success "✅ DEPLOYMENT VALIDATION PASSED"
-    log_success "═══════════════════════════════════════"
-    echo ""
-    log_success "All validation tests passed! System is fully operational."
-    echo ""
-fi
-
-# ============================================================
-# SAVE DEPLOYMENT INFO
-# ============================================================
-
-cat > "$DEPLOY_PATH/DEPLOYMENT_INFO.txt" << EOF
+# -----------------------------------------------------------------------
+# SAVE DEPLOYMENT INFO (mode 600 — owner only)
+# -----------------------------------------------------------------------
+INFO_FILE="$DEPLOY_PATH/DEPLOYMENT_INFO.txt"
+cat > "$INFO_FILE" <<INFO
 Mini-SOC Deployment Information
-Generated: $(date)
+Generated : $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+==========================================================
 
-Deployment Path: $DEPLOY_PATH
-Server IP: $SERVER_IP
-Access Port: $NGINX_PORT
-Wazuh API: $WAZUH_API_URL
+Access URL      : http://${SERVER_IP}:${NGINX_PORT}
+Deployment Path : ${DEPLOY_PATH}
+Nginx Port      : ${NGINX_PORT}
+Server IP       : ${SERVER_IP}
 
-Access URL: http://$SERVER_IP:$NGINX_PORT
+Admin Email     : ${ADMIN_EMAIL}
+Admin Username  : ${ADMIN_USER}
 
-Admin User: $ADMIN_USER
-Admin Email: $ADMIN_EMAIL
+Wazuh API       : ${WAZUH_API_URL}
+Wazuh User      : ${WAZUH_API_USER}
+Zabbix Enabled  : ${ZABBIX_ENABLED}
+Zabbix URL      : ${ZABBIX_API_URL:-N/A}
 
-Database Password: $DB_PASSWORD
-Redis Password: $REDIS_PASSWORD
-Secret Key: $SECRET_KEY
+==========================================================
+SENSITIVE — STORE SECURELY
+DB Password     : ${DB_PASSWORD}
+Redis Password  : ${REDIS_PASSWORD}
+Secret Key      : ${SECRET_KEY}
+==========================================================
 
-Container Status:
-$(docker-compose -f docker-compose.production.yml ps)
+Migration       : ${MIG_VER:-unknown}
+Containers up   : ${RUNNING}
+Validation      : $([ "$FAIL" -eq 0 ] && echo "PASSED" || echo "FAILED")
 
-Migration Version: $MIGRATION_VERSION
+$($DC -f docker-compose.production.yml ps 2>/dev/null || true)
+INFO
+chmod 600 "$INFO_FILE"
+log_ok "Deployment info saved to: $INFO_FILE"
 
-Validation Status: $([ "$VALIDATION_FAILED" = false ] && echo "PASSED" || echo "FAILED")
-EOF
-
-chmod 600 "$DEPLOY_PATH/DEPLOYMENT_INFO.txt"
-log_success "Deployment info saved to: $DEPLOY_PATH/DEPLOYMENT_INFO.txt"
+# -----------------------------------------------------------------------
+# FINAL SUMMARY
+# -----------------------------------------------------------------------
+echo ""
+if [[ "$FAIL" -eq 0 ]]; then
+    echo -e "${GREEN}${BOLD}"
+    echo "  ╔══════════════════════════════════════════╗"
+    echo "  ║  ✅  DEPLOYMENT COMPLETED SUCCESSFULLY   ║"
+    echo "  ╚══════════════════════════════════════════╝"
+    echo -e "${NC}"
+else
+    echo -e "${RED}${BOLD}"
+    echo "  ╔══════════════════════════════════════════╗"
+    echo "  ║  ⚠️   DEPLOYMENT FINISHED WITH WARNINGS  ║"
+    echo "  ╚══════════════════════════════════════════╝"
+    echo -e "${NC}"
+    log_warn "Review the errors above before using the system in production."
+fi
 
 echo ""
-echo -e "${BLUE}✅ Next Steps:${NC}"
-echo "1. Open browser: http://$SERVER_IP:$NGINX_PORT"
-echo "2. Login with admin credentials"
-echo "3. Verify Wazuh alerts are being collected"
-echo "4. Check system monitoring dashboard"
+echo -e "${BOLD}📍 Access:${NC}"
+echo "   Web UI     : http://$SERVER_IP:$NGINX_PORT"
+echo "   Health     : http://$SERVER_IP:$NGINX_PORT/api/v1/health/ready"
 echo ""
-echo -e "${BLUE}📋 Useful Commands:${NC}"
-echo "  View logs:        cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml logs -f backend"
-echo "  Restart service:  cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml restart"
-echo "  Stop all:         cd $DEPLOY_PATH && docker-compose -f docker-compose.production.yml down"
-echo "  View config:      cat $DEPLOY_PATH/.env.production"
-echo "  Container stats:  docker stats"
+echo -e "${BOLD}👤 Admin:${NC}"
+echo "   Email      : $ADMIN_EMAIL"
+echo "   Password   : (as entered)"
 echo ""
-echo -e "${YELLOW}⚠️  Security Reminders:${NC}"
-echo "• Change admin password on first login"
-echo "• Backup passwords file: $DEPLOY_PATH/DEPLOYMENT_INFO.txt"
-echo "• Enable firewall: sudo ufw allow $NGINX_PORT/tcp"
-echo "• Regular backups: docker-compose -f docker-compose.production.yml exec db pg_dump"
-echo "• Keep system updated: apt update && apt upgrade"
+echo -e "${BOLD}🔧 Useful commands:${NC}"
+echo "   Logs       : cd $DEPLOY_PATH && $DC -f docker-compose.production.yml logs -f backend"
+echo "   Restart    : cd $DEPLOY_PATH && $DC -f docker-compose.production.yml restart"
+echo "   Stop all   : cd $DEPLOY_PATH && $DC -f docker-compose.production.yml down"
+echo "   DB backup  : $DC -f docker-compose.production.yml exec db pg_dump -U postgres mini_soc_prod > backup.sql"
 echo ""
-echo "═══════════════════════════════════════"
-echo "  🚀 DEPLOYMENT COMPLETED SUCCESSFULLY"
-echo "═══════════════════════════════════════"
+echo -e "${YELLOW}⚠ Security reminders:${NC}"
+echo "   • Change admin password on first login"
+echo "   • Keep $INFO_FILE safe — it contains secrets"
+echo "   • Open firewall: sudo ufw allow $NGINX_PORT/tcp && sudo ufw reload"
 echo ""
