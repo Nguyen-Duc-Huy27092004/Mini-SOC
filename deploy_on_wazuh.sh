@@ -52,13 +52,48 @@ log_ok "Docker Compose detected: $DC"
 # -----------------------------------------------------------------------
 log_section "PRE-FLIGHT CHECKS"
 
+# -----------------------------------------------------------------------
+# PRE-FLIGHT CHECKS
+# -----------------------------------------------------------------------
+log_section "PRE-FLIGHT CHECKS"
+
+log_info "Checking required commands..."
 command -v docker  &>/dev/null || die "Docker not installed."
 log_ok "Docker: $(docker --version)"
+
 log_ok "Compose: $($DC version --short 2>/dev/null || $DC version | head -1)"
+
 command -v git     &>/dev/null || die "git not installed."
 log_ok "Git: $(git --version)"
+
 command -v curl    &>/dev/null || die "curl not installed."
+log_ok "curl: $(curl --version | head -1)"
+
 command -v openssl &>/dev/null || die "openssl not installed."
+log_ok "openssl: $(openssl version)"
+
+# Check Docker daemon is running
+if ! docker info > /dev/null 2>&1; then
+    die "Docker daemon is not running. Start Docker first: sudo systemctl start docker"
+fi
+log_ok "Docker daemon is running"
+
+# Check available disk space (need at least 5GB)
+AVAILABLE_GB=$(df -BG . | awk 'NR==2 {print $4}' | sed 's/G//')
+if [[ "$AVAILABLE_GB" -lt 5 ]]; then
+    log_warn "Low disk space: ${AVAILABLE_GB}GB available (recommend 5GB+)"
+    read -rp "Continue anyway? (y/n): " _continue
+    [[ "$_continue" =~ ^[Yy]$ ]] || exit 0
+else
+    log_ok "Disk space: ${AVAILABLE_GB}GB available"
+fi
+
+# Check if Docker Compose v2 is available (preferred)
+if docker compose version &>/dev/null 2>&1; then
+    log_ok "Using Docker Compose V2 (recommended)"
+else
+    log_warn "Using Docker Compose V1 (consider upgrading to V2)"
+fi
 
 # -----------------------------------------------------------------------
 # WELL-KNOWN PORTS USED BY WAZUH & SYSTEM — NEVER TOUCH THESE
@@ -361,20 +396,72 @@ docker image prune -f --filter "dangling=true" 2>/dev/null || true
 log_ok "Old containers removed"
 
 # -----------------------------------------------------------------------
+# CODE VALIDATION (PRE-BUILD CHECK)
+# -----------------------------------------------------------------------
+log_section "CODE VALIDATION"
+
+log_info "Checking for known issues in code..."
+
+# Check Bug #11: FastAPI 204 response model
+if ! grep -q 'response_model=None' backend/app/api/v1/zabbix.py 2>/dev/null; then
+    log_error "Bug #11 detected: Missing response_model=None in zabbix.py DELETE endpoints"
+    log_error "This will cause backend container to fail with AssertionError"
+    die "Please fix backend/app/api/v1/zabbix.py before deployment. See BUG_11_FIXED.md"
+fi
+log_ok "Bug #11 check passed (response_model=None present)"
+
+# Check .env.production exists
+[[ -f "$ENV_FILE" ]] || die ".env.production not found at $ENV_FILE"
+log_ok "Configuration file exists"
+
+# Verify critical env vars
+for KEY in POSTGRES_PASSWORD REDIS_PASSWORD SECRET_KEY WAZUH_API_PASSWORD; do
+    grep -q "^${KEY}=" "$ENV_FILE" || die ".env.production is missing ${KEY}"
+done
+log_ok "All required environment variables present"
+
+# -----------------------------------------------------------------------
 # BUILD IMAGES
 # -----------------------------------------------------------------------
-log_section "BUILDING DOCKER IMAGES"
+log_section "BUILD DOCKER IMAGES"
 
-# Validate compose config first
-$DC -f docker-compose.production.yml --env-file "$ENV_FILE" config > /dev/null \
-    || die "Docker Compose config validation failed. Check .env.production."
-log_ok "Docker Compose config is valid"
+# Pre-build validation
+log_info "Validating Docker Compose configuration..."
+if ! $DC -f docker-compose.production.yml --env-file "$ENV_FILE" config > /dev/null 2>&1; then
+    log_error "Docker Compose config validation failed!"
+    $DC -f docker-compose.production.yml --env-file "$ENV_FILE" config
+    die "Fix configuration errors above before proceeding"
+fi
+log_ok "Docker Compose configuration is valid"
+
+# Test docker build context
+log_info "Verifying build contexts..."
+[[ -f "backend/Dockerfile" ]] || [[ -f "docker/backend.Dockerfile" ]] || die "Backend Dockerfile not found"
+[[ -f "frontend/Dockerfile" ]] || [[ -f "docker/frontend.Dockerfile" ]] || die "Frontend Dockerfile not found"
+log_ok "Dockerfiles present"
 
 log_info "Building backend image..."
-$DC -f docker-compose.production.yml --env-file "$ENV_FILE" build backend \
-    2>&1 | tee /tmp/soc_build_backend.log \
-    || { log_error "Backend build failed:"; tail -40 /tmp/soc_build_backend.log; die "Aborting."; }
-log_ok "Backend image built"
+BUILD_LOG="/tmp/soc_build_backend_$(date +%s).log"
+if $DC -f docker-compose.production.yml --env-file "$ENV_FILE" build backend 2>&1 | tee "$BUILD_LOG"; then
+    log_ok "Backend image built successfully"
+else
+    log_error "Backend build failed! Analyzing error..."
+    
+    # Check for specific known errors
+    if grep -qi "AssertionError.*204.*response body" "$BUILD_LOG"; then
+        log_error "Bug #11 detected: Status code 204 must not have a response body"
+        log_error "Fix: Add response_model=None to DELETE endpoints in backend/app/api/v1/zabbix.py"
+        log_error "See BUG_11_FIXED.md for details"
+    fi
+    
+    if grep -qi "ModuleNotFoundError\|ImportError" "$BUILD_LOG"; then
+        log_error "Python import error detected - check dependencies in backend/requirements.txt"
+    fi
+    
+    log_error "Last 40 lines of build log:"
+    tail -40 "$BUILD_LOG"
+    die "Backend build failed. Fix errors above and retry."
+fi
 
 log_info "Building frontend image (bakes server URL at build time)..."
 $DC -f docker-compose.production.yml --env-file "$ENV_FILE" build frontend \
@@ -457,11 +544,38 @@ log_section "STARTING ALL SERVICES"
 $DC -f docker-compose.production.yml --env-file "$ENV_FILE" up -d
 
 # Wait for backend health
-log_info "Waiting for backend to become healthy (up to 120s)..."
+log_info "Waiting for backend to become healthy (up to 180s)..."
+log_info "This validates that all code issues (including Bug #11) are resolved..."
 BACKEND_READY=false
-for i in $(seq 1 60); do
+BACKEND_ERROR=""
+for i in $(seq 1 90); do
+    # Check if container is running first
+    if ! docker ps --format '{{.Names}}' | grep -q 'mini_soc_backend_prod'; then
+        log_error "Backend container stopped unexpectedly!"
+        log_error "Last 50 lines of backend logs:"
+        $DC -f docker-compose.production.yml logs --tail=50 backend
+        
+        # Check for Bug #11 in logs
+        if $DC -f docker-compose.production.yml logs backend 2>&1 | grep -qi "AssertionError.*204.*response body"; then
+            log_error ""
+            log_error "🔴 BUG #11 DETECTED IN RUNTIME!"
+            log_error "Status code 204 must not have a response body"
+            log_error ""
+            log_error "SOLUTION:"
+            log_error "1. Edit backend/app/api/v1/zabbix.py"
+            log_error "2. Find DELETE endpoints with status_code=204"
+            log_error "3. Add response_model=None to decorator"
+            log_error "4. Re-run this deployment script"
+            log_error ""
+            log_error "See BUG_11_FIXED.md for detailed fix instructions"
+        fi
+        
+        die "Backend failed to start. Check logs above."
+    fi
+    
+    # Try health check
     if curl -sf "http://localhost:8000/api/v1/health/ready" > /dev/null 2>&1; then
-        log_ok "Backend healthy (attempt $i)"
+        log_ok "Backend healthy (attempt $i/90)"
         BACKEND_READY=true
         break
     fi

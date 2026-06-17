@@ -427,6 +427,7 @@ async def update_asset(
 @router.delete(
     "/assets/{asset_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     summary="Delete an asset record",
     tags=["Zabbix - Assets"],
 )
@@ -499,6 +500,7 @@ async def update_maintenance(
 @router.delete(
     "/maintenance/{maint_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     summary="Delete a maintenance schedule entry",
     tags=["Zabbix - Maintenance"],
 )
