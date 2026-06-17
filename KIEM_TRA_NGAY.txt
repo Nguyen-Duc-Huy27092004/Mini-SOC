@@ -1,0 +1,153 @@
+================================================================================
+  🔍 KIỂM TRA NGAY: TẠI SAO KHÔNG CÓ DỮ LIỆU?
+================================================================================
+
+Hệ thống không nhận được dữ liệu từ Wazuh/Zabbix API.
+Lỗi từ đâu? Chạy script này để biết!
+
+================================================================================
+  🚀 CHẠY SCRIPT CHẨN ĐOÁN
+================================================================================
+
+TRÊN SERVER (Linux):
+-------------------
+cd /opt/mini-soc
+sudo bash diagnose_api_connectivity.sh
+
+
+TRÊN MÁY LOCAL (Windows):
+-------------------------
+powershell -ExecutionPolicy Bypass -File Diagnose-APIConnectivity.ps1
+
+
+================================================================================
+  📊 SCRIPT SẼ KIỂM TRA
+================================================================================
+
+✓ Wazuh API có hoạt động không?
+✓ Wazuh credentials có đúng không?
+✓ Wazuh có trả về danh sách agents không?
+✓ Zabbix API có hoạt động không?
+✓ Backend container có chạy không?
+✓ Database có dữ liệu không?
+✓ Wazuh alerts file có tồn tại không?
+✓ Collector có hoạt động không?
+
+
+================================================================================
+  ❓ CÁC KẾT QUẢ CÓ THỂ
+================================================================================
+
+1. ✅ WAZUH API OK + CÓ DỮ LIỆU
+   → Hệ thống hoạt động bình thường
+   → Dashboard sẽ hiển thị dữ liệu
+
+2. ⚠️  WAZUH API OK + CHƯA CÓ DỮ LIỆU
+   → Wazuh hoạt động nhưng chưa có alerts
+   → Giải pháp: Inject test data
+   
+   bash fix_data_flow_complete.sh
+   # Chọn "yes" khi hỏi
+
+3. ❌ WAZUH API - PORT CLOSED
+   → Wazuh service KHÔNG CHẠY
+   → Giải pháp:
+   
+   systemctl start wazuh-manager
+   systemctl status wazuh-manager
+
+4. ❌ WAZUH API - INVALID CREDENTIALS
+   → Username hoặc password SAI
+   → Giải pháp:
+   
+   # Lấy password đúng
+   cat /var/ossec/.secret
+   
+   # Cập nhật vào .env.production
+   vim /opt/mini-soc/.env.production
+   WAZUH_API_PASSWORD=<password-đúng>
+   
+   # Restart
+   docker compose restart backend
+
+5. ❌ WAZUH API - NOT CONFIGURED
+   → Chưa cấu hình WAZUH_API_URL
+   → Giải pháp:
+   
+   # Thêm vào .env.production
+   WAZUH_API_URL=https://<IP>:55000
+   WAZUH_API_USER=wazuh
+   WAZUH_API_PASSWORD=<password>
+
+
+================================================================================
+  🔧 GIẢI PHÁP NHANH
+================================================================================
+
+NẾUWAZUH SERVICE KHÔNG CHẠY:
+systemctl start wazuh-manager && systemctl enable wazuh-manager
+
+
+NẾU CREDENTIALS SAI:
+cat /var/ossec/.secret
+vim /opt/mini-soc/.env.production
+docker compose restart backend
+
+
+NẾU FIREWALL CHẶN:
+ufw allow 55000/tcp && ufw reload
+
+
+NẾU CHƯA CÓ ALERTS (test ngay):
+cd /opt/mini-soc
+bash fix_data_flow_complete.sh
+# Chọn "yes" - sẽ inject 10 test events
+
+
+================================================================================
+  📋 KIỂM TRA THỦ CÔNG (nếu cần)
+================================================================================
+
+1. Kiểm tra Wazuh service:
+   systemctl status wazuh-manager
+
+2. Test Wazuh API thủ công:
+   curl -k -u wazuh:<password> https://localhost:55000/security/user/authenticate
+
+3. Kiểm tra Wazuh agents:
+   /var/ossec/bin/agent_control -l
+
+4. Kiểm tra Wazuh alerts file:
+   tail -f /var/ossec/logs/alerts/alerts.json
+
+5. Kiểm tra backend logs:
+   docker logs mini_soc_backend_prod --tail 50
+
+6. Kiểm tra database:
+   docker exec mini_soc_db_prod psql -U postgres -d mini_soc_prod \
+     -c "SELECT COUNT(*) FROM wazuh_events;"
+
+
+================================================================================
+  🎯 KẾT LUẬN
+================================================================================
+
+Script sẽ XÁC ĐỊNH CHÍNH XÁC:
+
+→ Wazuh API có hoạt động không?
+→ Vấn đề từ Wazuh hay từ Mini-SOC?
+→ Credentials có đúng không?
+→ Dữ liệu có được thu thập không?
+
+VÀ ĐƯA RA GIẢI PHÁP CỤ THỂ!
+
+
+================================================================================
+  🚀 CHẠY NGAY
+================================================================================
+
+sudo bash diagnose_api_connectivity.sh
+
+Sau đó làm theo hướng dẫn trong output!
+
+================================================================================
