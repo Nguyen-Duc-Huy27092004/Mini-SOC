@@ -9,6 +9,10 @@ from app.models.zabbix import (
     ZabbixMetric,
     ZabbixProblem,
     ZabbixTrigger,
+    ZabbixAsset,
+    ZabbixMaintenance,
+    ZabbixTask,
+    ZabbixNotification,
 )
 
 __all__ = [
@@ -32,4 +36,8 @@ __all__ = [
     "ZabbixEvent",
     "ZabbixTrigger",
     "ZabbixMetric",
+    "ZabbixAsset",
+    "ZabbixMaintenance",
+    "ZabbixTask",
+    "ZabbixNotification",
 ]

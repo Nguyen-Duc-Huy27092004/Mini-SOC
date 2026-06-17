@@ -8,6 +8,13 @@ import { OperationsDashboard } from '../features/operations/pages/OperationsDash
 import { AlertsPage } from '../features/alerts/pages/AlertsPage';
 import { MainLayout } from '../widgets/layout/MainLayout';
 
+// Zabbix Pages
+import { InfrastructureDashboard } from '../features/zabbix/pages/InfrastructureDashboard';
+import { AssetManagement } from '../features/zabbix/pages/AssetManagement';
+import { MaintenanceCenter } from '../features/zabbix/pages/MaintenanceCenter';
+import { TaskCenter } from '../features/zabbix/pages/TaskCenter';
+import { NotificationSettings } from '../features/zabbix/pages/NotificationSettings';
+
 function Protected({ children }: { children: React.ReactNode }) {
   const ok = useAuthStore(selectIsAuthenticated);
   return ok ? <>{children}</> : <Navigate to="/login" replace />;
@@ -42,6 +49,13 @@ export function AppRouter() {
         <Route path="analyst" element={<AnalystDashboard />} />
         <Route path="operations" element={<OperationsDashboard />} />
         <Route path="alerts" element={<AlertsPage />} />
+        
+        {/* Zabbix Routes */}
+        <Route path="infrastructure" element={<InfrastructureDashboard />} />
+        <Route path="infrastructure/assets" element={<AssetManagement />} />
+        <Route path="infrastructure/maintenance" element={<MaintenanceCenter />} />
+        <Route path="infrastructure/tasks" element={<TaskCenter />} />
+        <Route path="infrastructure/notifications" element={<NotificationSettings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

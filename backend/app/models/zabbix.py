@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, Index, Integer, String, Text
+    Boolean, DateTime, Float, Index, Integer, String, Text, Enum
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -169,4 +169,158 @@ class ZabbixMetric(Base):
         DateTime(timezone=True),
         nullable=False,
         default=datetime.utcnow,
+    )
+
+
+# =========================================================================
+# NEW: Asset Management
+# =========================================================================
+
+class ZabbixAsset(Base):
+    """
+    Asset inventory — manually managed hardware/software register.
+    Independent of live Zabbix data (complementary layer).
+    """
+    __tablename__ = "zabbix_assets"
+    __table_args__ = (
+        Index("idx_zabbix_asset_hostname", "hostname"),
+        Index("idx_zabbix_asset_lifecycle", "lifecycle_status"),
+        Index("idx_zabbix_asset_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    vendor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    purchase_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    warranty_expiration: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Active | Maintenance | End of Life
+    lifecycle_status: Mapped[str] = mapped_column(String(50), nullable=False, default="Active")
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+# =========================================================================
+# NEW: Maintenance Schedule
+# =========================================================================
+
+class ZabbixMaintenance(Base):
+    """
+    Preventive maintenance schedule per host/asset.
+    Tracks next/last maintenance dates and generates upcoming tasks.
+    """
+    __tablename__ = "zabbix_maintenance"
+    __table_args__ = (
+        Index("idx_zabbix_maint_host", "hostname"),
+        Index("idx_zabbix_maint_next_date", "next_maintenance_date"),
+        Index("idx_zabbix_maint_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    # Replace Disks | Update Firmware | Windows Patches | Linux Updates |
+    # Database Maintenance | Backup Verification | Security Audit | General
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False, default="General")
+    last_maintenance_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_maintenance_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Interval in days: 90 | 180 | 365
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    # Scheduled | Completed | Overdue | Cancelled
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="Scheduled")
+    assigned_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+# =========================================================================
+# NEW: Server Task Recommendations
+# =========================================================================
+
+class ZabbixTask(Base):
+    """
+    Auto-generated task recommendations from resource/problem data.
+    Can also be manually created.
+    """
+    __tablename__ = "zabbix_tasks"
+    __table_args__ = (
+        Index("idx_zabbix_task_host", "hostname"),
+        Index("idx_zabbix_task_priority", "priority"),
+        Index("idx_zabbix_task_status", "status"),
+        Index("idx_zabbix_task_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    # Patch Required | Reboot Required | High CPU Investigation | Disk Cleanup |
+    # Memory Upgrade | Security Update | Firmware Update | Backup Check
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Low | Medium | High | Critical
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="Medium")
+    # Open | In Progress | Resolved | Dismissed
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="Open")
+    # auto | manual
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="auto")
+    metric_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+# =========================================================================
+# NEW: Email Notification Log
+# =========================================================================
+
+class ZabbixNotification(Base):
+    """
+    Log of all email notifications sent by the system.
+    """
+    __tablename__ = "zabbix_notifications"
+    __table_args__ = (
+        Index("idx_zabbix_notif_type", "notification_type"),
+        Index("idx_zabbix_notif_sent_at", "sent_at"),
+        Index("idx_zabbix_notif_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # server_down | high_cpu | high_disk | high_severity | maintenance_due |
+    # backup_failure | ssl_expiry | test
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    recipients: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # comma-separated emails
+    severity: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    metric_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    suggested_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # sent | failed | skipped (SMTP disabled)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="sent")
+    error_msg: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )

@@ -2,19 +2,26 @@ import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Bell, ShieldAlert, LogOut, Wifi, WifiOff,
-  Briefcase, Wrench, Shield, User,
+  Briefcase, Wrench, Shield, User, Server, CalendarClock, ListTodo, MailWarning
 } from 'lucide-react';
 import { useAuthStore, selectUser } from '../../features/auth/store';
 import { useAlertStore } from '../../features/alerts/store';
 import { useWebSocket } from '../../shared/hooks/useWebSocket';
 import { SeverityBadge } from '../../shared/ui/SeverityBadge';
 
-const nav = [
-  { to: '/', label: 'Trang chủ', icon: LayoutDashboard, end: true },
+const wazuhNav = [
   { to: '/executive', label: 'Ban Lãnh đạo', icon: Briefcase },
   { to: '/analyst', label: 'SOC Analyst', icon: ShieldAlert },
   { to: '/operations', label: 'Vận hành IT', icon: Wrench },
   { to: '/alerts', label: 'Cảnh báo', icon: Bell },
+];
+
+const zabbixNav = [
+  { to: '/infrastructure', label: 'Overview Dashboard', icon: LayoutDashboard },
+  { to: '/infrastructure/assets', label: 'Asset Management', icon: Server },
+  { to: '/infrastructure/maintenance', label: 'Maintenance Center', icon: CalendarClock },
+  { to: '/infrastructure/tasks', label: 'Task Center', icon: ListTodo },
+  { to: '/infrastructure/notifications', label: 'Notifications', icon: MailWarning },
 ];
 
 export function MainLayout() {
@@ -45,12 +52,13 @@ export function MainLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          {nav.map(({ to, label, icon: Icon, end }) => (
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          
+          {/* Dashboard (Home) */}
+          <div className="space-y-0.5">
             <NavLink
-              key={to}
-              to={to}
-              end={end}
+              to="/"
+              end={true}
               className={({ isActive }) =>
                 `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
                   isActive
@@ -59,10 +67,57 @@ export function MainLayout() {
                 }`
               }
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              {label}
+              <LayoutDashboard className="w-4 h-4 shrink-0" />
+              Tổng quan
             </NavLink>
-          ))}
+          </div>
+
+          {/* Wazuh Section */}
+          <div>
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Threat Monitoring (Wazuh)</p>
+            <div className="space-y-0.5">
+              {wazuhNav.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
+                      isActive
+                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          {/* Zabbix Section */}
+          <div>
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Infrastructure (Zabbix)</p>
+            <div className="space-y-0.5">
+              {zabbixNav.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
+                      isActive
+                        ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
         </nav>
 
         {/* User info */}

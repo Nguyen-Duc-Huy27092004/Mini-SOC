@@ -224,6 +224,35 @@ class Settings(BaseSettings):
     ZABBIX_ENABLED: bool = True
 
     # =========================================================
+    # EMAIL NOTIFICATIONS (Zabbix alerting)
+    # =========================================================
+
+    SMTP_HOST: str = "smtp.gmail.com"
+
+    SMTP_PORT: int = 587
+
+    SMTP_USER: str = ""
+
+    SMTP_PASSWORD: SecretStr = Field(default=SecretStr(""))
+
+    SMTP_FROM: str = ""
+
+    # Set to True to enable email sending
+    NOTIFICATION_ENABLED: bool = False
+
+    # Comma-separated list of recipient emails
+    NOTIFICATION_TO_EMAILS: list[str] = Field(default_factory=list)
+
+    # CPU threshold for high CPU notifications (%)
+    NOTIFICATION_CPU_THRESHOLD: float = 90.0
+
+    # Disk threshold for high disk notifications (%)
+    NOTIFICATION_DISK_THRESHOLD: float = 90.0
+
+    # Days before maintenance to send notification
+    NOTIFICATION_MAINTENANCE_DAYS_AHEAD: int = 7
+
+    # =========================================================
     # GEOIP
     # =========================================================
 

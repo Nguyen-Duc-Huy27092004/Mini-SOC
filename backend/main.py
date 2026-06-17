@@ -24,6 +24,7 @@ logger = structlog.get_logger()
 
 collector_task: asyncio.Task | None = None
 sync_agents_task: asyncio.Task | None = None
+sync_zabbix_task: asyncio.Task | None = None
 
 
 def _init_sentry() -> None:
@@ -70,6 +71,29 @@ async def _sync_agents_loop() -> None:
         await asyncio.sleep(300)
 
 
+async def _sync_zabbix_loop() -> None:
+    """
+    Periodically sync Zabbix snapshot data to Postgres.
+    Runs every 60 seconds.
+    """
+    from app.core.database import async_session_maker
+    from app.services.zabbix.zabbix_service import zabbix_service
+    
+    # Check if Zabbix is enabled
+    if getattr(settings, "ZABBIX_ENABLED", False) is False:
+        await logger.ainfo("zabbix_sync_disabled")
+        return
+        
+    while True:
+        try:
+            async with async_session_maker() as db:
+                await zabbix_service.sync_to_db(db)
+        except Exception:
+            await logger.aerror("zabbix_sync_loop_failed", exc_info=True)
+        
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -87,6 +111,10 @@ async def lifespan(app: FastAPI):
     global sync_agents_task
     sync_agents_task = asyncio.create_task(_sync_agents_loop())
 
+    # Start periodic Zabbix sync
+    global sync_zabbix_task
+    sync_zabbix_task = asyncio.create_task(_sync_zabbix_loop())
+
     yield
 
     await logger.ainfo("app_shutting_down")
@@ -103,6 +131,13 @@ async def lifespan(app: FastAPI):
         sync_agents_task.cancel()
         try:
             await asyncio.wait_for(asyncio.gather(sync_agents_task, return_exceptions=True), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+            
+    if sync_zabbix_task:
+        sync_zabbix_task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.gather(sync_zabbix_task, return_exceptions=True), timeout=5.0)
         except asyncio.TimeoutError:
             pass
     

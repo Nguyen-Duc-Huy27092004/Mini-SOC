@@ -117,6 +117,17 @@ export interface ZabbixTopHost {
   max_severity_color: string;
 }
 
+export interface ZabbixTopServer {
+  host_id: string;
+  host_name: string;
+  ip_address?: string | null;
+  cpu_pct?: number | null;
+  mem_pct?: number | null;
+  disk_pct?: number | null;
+  problem_count: number;
+  status: string;
+}
+
 export interface ZabbixTimelinePoint {
   timestamp: string;   // "HH:MM"
   count: number;
@@ -134,6 +145,22 @@ export interface ZabbixHealthScore {
 // Top-level response types
 // =========================================================================
 
+export interface ZabbixOverviewResponse {
+  total_servers: number;
+  online_servers: number;
+  offline_servers: number;
+  warning_servers: number;
+  critical_servers: number;
+  health_score: number;
+  health_grade: string;
+  total_problems: number;
+  critical_problems: number;
+  disaster_problems: number;
+  unacknowledged_problems: number;
+  is_online: boolean;
+  error?: string | null;
+}
+
 export interface ZabbixSummaryResponse {
   hosts: ZabbixHostSummary;
   problems: ZabbixProblemSummary;
@@ -147,4 +174,121 @@ export interface ZabbixChartsResponse {
   top_hosts: ZabbixTopHost[];
   timeline: ZabbixTimelinePoint[];
   resource_usage: ZabbixResourceUsage[];
+}
+
+// =========================================================================
+// Assets
+// =========================================================================
+
+export interface ZabbixAssetCreate {
+  hostname: string;
+  ip_address?: string | null;
+  location?: string | null;
+  department?: string | null;
+  owner?: string | null;
+  vendor?: string | null;
+  model?: string | null;
+  serial_number?: string | null;
+  purchase_date?: string | null;
+  warranty_expiration?: string | null;
+  lifecycle_status: string;
+  notes?: string | null;
+}
+
+export interface ZabbixAssetOut {
+  id: string;
+  hostname: string;
+  ip_address?: string | null;
+  location?: string | null;
+  department?: string | null;
+  owner?: string | null;
+  vendor?: string | null;
+  model?: string | null;
+  serial_number?: string | null;
+  purchase_date?: string | null;
+  warranty_expiration?: string | null;
+  lifecycle_status: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ZabbixAssetUpdate = Partial<ZabbixAssetCreate>;
+
+// =========================================================================
+// Maintenance
+// =========================================================================
+
+export interface ZabbixMaintenanceCreate {
+  hostname: string;
+  ip_address?: string | null;
+  task_type: string;
+  last_maintenance_date?: string | null;
+  next_maintenance_date: string;
+  interval_days: number;
+  status: string;
+  assigned_to?: string | null;
+  notes?: string | null;
+}
+
+export interface ZabbixMaintenanceOut {
+  id: string;
+  hostname: string;
+  ip_address?: string | null;
+  task_type: string;
+  last_maintenance_date?: string | null;
+  next_maintenance_date: string;
+  interval_days: number;
+  status: string;
+  assigned_to?: string | null;
+  notes?: string | null;
+  is_overdue: boolean;
+  days_until_due?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ZabbixMaintenanceUpdate = Partial<ZabbixMaintenanceCreate>;
+
+// =========================================================================
+// Tasks
+// =========================================================================
+
+export interface ZabbixTaskOut {
+  id: string;
+  hostname: string;
+  ip_address?: string | null;
+  task_type: string;
+  description: string;
+  priority: string;
+  status: string;
+  source: string;
+  metric_value?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZabbixTaskUpdate {
+  status?: string;
+  priority?: string;
+}
+
+// =========================================================================
+// Notifications
+// =========================================================================
+
+export interface ZabbixNotificationOut {
+  id: string;
+  notification_type: string;
+  hostname?: string | null;
+  ip_address?: string | null;
+  subject: string;
+  message: string;
+  recipients?: string | null;
+  severity?: string | null;
+  metric_value?: number | null;
+  suggested_action?: string | null;
+  status: string;
+  error_msg?: string | null;
+  sent_at: string;
 }
