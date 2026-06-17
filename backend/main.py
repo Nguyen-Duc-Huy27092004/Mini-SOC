@@ -25,6 +25,7 @@ logger = structlog.get_logger()
 collector_task: asyncio.Task | None = None
 sync_agents_task: asyncio.Task | None = None
 sync_zabbix_task: asyncio.Task | None = None
+poll_alerts_task: asyncio.Task | None = None
 
 
 def _init_sentry() -> None:
@@ -71,6 +72,24 @@ async def _sync_agents_loop() -> None:
         await asyncio.sleep(300)
 
 
+async def _poll_wazuh_alerts_loop() -> None:
+    """
+    Periodically poll alerts from Wazuh API.
+    Runs every 10 seconds to supplement file tailing.
+    """
+    from app.collector import get_collector
+    
+    collector = get_collector()
+    
+    while True:
+        try:
+            await collector.poll_alerts_from_api()
+        except Exception:
+            await logger.aerror("poll_alerts_loop_failed", exc_info=True)
+            
+        await asyncio.sleep(10)
+
+
 async def _sync_zabbix_loop() -> None:
     """
     Periodically sync Zabbix snapshot data to Postgres.
@@ -111,6 +130,10 @@ async def lifespan(app: FastAPI):
     global sync_agents_task
     sync_agents_task = asyncio.create_task(_sync_agents_loop())
 
+    # Start polling alerts from API (fallback for Windows)
+    global poll_alerts_task
+    poll_alerts_task = asyncio.create_task(_poll_wazuh_alerts_loop())
+
     # Start periodic Zabbix sync
     global sync_zabbix_task
     sync_zabbix_task = asyncio.create_task(_sync_zabbix_loop())
@@ -131,6 +154,13 @@ async def lifespan(app: FastAPI):
         sync_agents_task.cancel()
         try:
             await asyncio.wait_for(asyncio.gather(sync_agents_task, return_exceptions=True), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+            
+    if poll_alerts_task:
+        poll_alerts_task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.gather(poll_alerts_task, return_exceptions=True), timeout=5.0)
         except asyncio.TimeoutError:
             pass
             

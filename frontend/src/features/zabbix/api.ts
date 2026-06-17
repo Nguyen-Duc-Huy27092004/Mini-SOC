@@ -21,6 +21,7 @@ import type {
   ZabbixTopHost,
   ZabbixTopServer,
   ZabbixTriggerOut,
+  ZabbixSmtpStatus,
 } from './types';
 
 // =========================================================================
@@ -165,3 +166,9 @@ export const testNotification = async (email: string): Promise<ZabbixNotificatio
   const { data } = await api.post<ZabbixNotificationOut>('/zabbix/notifications/test', { email });
   return data;
 };
+
+export const getSmtpStatus = async (): Promise<ZabbixSmtpStatus> => {
+  const { data } = await api.get<ZabbixSmtpStatus>('/zabbix/smtp-status');
+  return data;
+};
+

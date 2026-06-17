@@ -3,8 +3,8 @@ import {
   MailWarning, Send, Activity, AlertCircle, 
   CheckCircle, ServerOff, Server, Clock
 } from 'lucide-react';
-import { getNotifications, testNotification } from '../api';
-import type { ZabbixNotificationOut } from '../types';
+import { getNotifications, testNotification, getSmtpStatus } from '../api';
+import type { ZabbixNotificationOut, ZabbixSmtpStatus } from '../types';
 
 export function NotificationSettings() {
   const [logs, setLogs] = useState<ZabbixNotificationOut[]>([]);
@@ -12,10 +12,26 @@ export function NotificationSettings() {
   const [testing, setTesting] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState<{success: boolean, msg: string} | null>(null);
+  const [smtpStatus, setSmtpStatus] = useState<ZabbixSmtpStatus | null>(null);
 
   useEffect(() => {
-    fetchLogs();
+    fetchData();
   }, []);
+
+  const fetchData = async () => {
+    try {
+      const [logsData, statusData] = await Promise.all([
+        getNotifications(50),
+        getSmtpStatus()
+      ]);
+      setLogs(logsData);
+      setSmtpStatus(statusData);
+    } catch (err) {
+      console.error('Failed to fetch notification data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchLogs = async () => {
     try {
@@ -23,8 +39,6 @@ export function NotificationSettings() {
       setLogs(data);
     } catch (err) {
       console.error('Failed to fetch notification logs', err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -88,6 +102,20 @@ export function NotificationSettings() {
           <p className="text-xs text-slate-400 mt-1">Email alert logs and SMTP configuration testing</p>
         </div>
       </div>
+
+      {smtpStatus && (!smtpStatus.enabled || !smtpStatus.configured) && (
+        <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 flex gap-3">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+          <div>
+            <h3 className="text-sm font-semibold text-rose-400">Email Notifications are Disabled or Not Configured</h3>
+            <p className="text-xs text-rose-300/80 mt-1">
+              {!smtpStatus.enabled ? 'NOTIFICATION_ENABLED is set to false. ' : ''}
+              {!smtpStatus.configured ? 'SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) are missing in the .env file. ' : ''}
+              Email alerts will not be sent until this is resolved.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         

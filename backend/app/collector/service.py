@@ -262,8 +262,32 @@ class AlertsCollectorService:
                             "status",
                             "unknown",
                         )
+                        
+                        existing.ip_address = agent_data.get("ip")
+                        os_data = agent_data.get("os", {})
+                        if isinstance(os_data, dict):
+                            existing.os_name = os_data.get("name")
+                            existing.os_platform = os_data.get("platform")
+                            existing.os_version = os_data.get("version")
+                        elif isinstance(os_data, str):
+                            existing.os_name = os_data
+                            
+                        existing.wazuh_agent_version = agent_data.get("version")
+                        existing.node_name = agent_data.get("node_name")
+                        existing.last_keep_alive = agent_data.get("lastKeepAlive")
 
                     else:
+                        
+                        os_name = None
+                        os_platform = None
+                        os_version = None
+                        os_data = agent_data.get("os", {})
+                        if isinstance(os_data, dict):
+                            os_name = os_data.get("name")
+                            os_platform = os_data.get("platform")
+                            os_version = os_data.get("version")
+                        elif isinstance(os_data, str):
+                            os_name = os_data
 
                         db.add(
                             EndpointInventory(
@@ -276,6 +300,13 @@ class AlertsCollectorService:
                                     "status",
                                     "unknown",
                                 ),
+                                ip_address=agent_data.get("ip"),
+                                os_name=os_name,
+                                os_platform=os_platform,
+                                os_version=os_version,
+                                wazuh_agent_version=agent_data.get("version"),
+                                node_name=agent_data.get("node_name"),
+                                last_keep_alive=agent_data.get("lastKeepAlive")
                             )
                         )
 
@@ -306,6 +337,46 @@ class AlertsCollectorService:
                 exc_info=True,
             )
 
+            return 0
+
+    # =========================================================
+    # ALERT POLLING
+    # =========================================================
+
+    async def poll_alerts_from_api(self) -> int:
+        """
+        Fallback mechanism to poll alerts from Wazuh API when file tailing fails.
+        Useful for Windows dev environments where /var/ossec/logs/alerts/alerts.json is missing.
+        """
+        try:
+            alerts = await asyncio.wait_for(
+                self.wazuh_client.get_alerts(limit=50),
+                timeout=20.0,
+            )
+
+            if not alerts:
+                return 0
+
+            count = 0
+            for raw_alert in alerts:
+                # Add a synthetic timestamp if missing to help normalizer
+                if "timestamp" not in raw_alert:
+                    from datetime import datetime, timezone
+                    raw_alert["timestamp"] = datetime.now(timezone.utc).isoformat()
+                    
+                await self._process_event(raw_alert)
+                count += 1
+                
+            if count > 0:
+                await logger.ainfo("polled_alerts_from_api", count=count)
+                
+            return count
+
+        except Exception:
+            await logger.aerror(
+                "poll_alerts_failed",
+                exc_info=True,
+            )
             return 0
 
     # =========================================================

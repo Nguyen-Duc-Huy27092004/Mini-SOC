@@ -407,6 +407,29 @@ class WazuhAPIClient:
 
         return items[0] if items else None
 
+    async def get_alerts(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+
+        response = await self._request(
+            "GET",
+            "/alerts",
+            params={
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+        if not response:
+            return []
+
+        return response.get("data", {}).get(
+            "affected_items",
+            [],
+        )
+
     async def get_rules(
         self,
         rule_ids: List[str],

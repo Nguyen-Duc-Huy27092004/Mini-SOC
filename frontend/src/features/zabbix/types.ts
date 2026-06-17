@@ -292,3 +292,11 @@ export interface ZabbixNotificationOut {
   error_msg?: string | null;
   sent_at: string;
 }
+
+export interface ZabbixSmtpStatus {
+  enabled: boolean;
+  configured: boolean;
+  host: string;
+  user?: string | null;
+}
+

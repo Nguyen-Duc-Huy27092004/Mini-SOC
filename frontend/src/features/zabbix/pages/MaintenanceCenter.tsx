@@ -3,12 +3,56 @@ import {
   CalendarClock, Wrench, CheckCircle, Clock, 
   AlertTriangle, Plus, Server
 } from 'lucide-react';
-import { getMaintenance } from '../api';
-import type { ZabbixMaintenanceOut } from '../types';
+import { getMaintenance, createMaintenance } from '../api';
+import type { ZabbixMaintenanceOut, ZabbixMaintenanceCreate } from '../types';
 
 export function MaintenanceCenter() {
   const [schedules, setSchedules] = useState<ZabbixMaintenanceOut[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<ZabbixMaintenanceCreate>({
+    hostname: '',
+    task_type: '',
+    next_maintenance_date: new Date().toISOString().split('T')[0],
+    interval_days: 30,
+    status: 'Scheduled',
+    assigned_to: '',
+    notes: '',
+  });
+
+  const handleOpenModal = () => {
+    setFormData({
+      hostname: '',
+      task_type: '',
+      next_maintenance_date: new Date().toISOString().split('T')[0],
+      interval_days: 30,
+      status: 'Scheduled',
+      assigned_to: '',
+      notes: '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => setIsModalOpen(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsSubmitting(true);
+      await createMaintenance(formData);
+      await fetchMaintenance();
+      handleCloseModal();
+    } catch (error) {
+      console.error('Failed to create maintenance:', error);
+      alert('Failed to schedule maintenance. Please check the console for details.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
 
   useEffect(() => {
     fetchMaintenance();
@@ -43,7 +87,10 @@ export function MaintenanceCenter() {
           <p className="text-xs text-slate-400 mt-1">Preventive maintenance schedules and tracking</p>
         </div>
         
-        <button className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition shrink-0">
+        <button 
+          onClick={handleOpenModal}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition shrink-0"
+        >
           <Plus className="w-4 h-4" />
           Schedule Maintenance
         </button>
@@ -124,6 +171,83 @@ export function MaintenanceCenter() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* Schedule Maintenance Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                <CalendarClock className="w-5 h-5 text-indigo-400" />
+                Schedule Maintenance
+              </h2>
+              <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-200">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              <form id="add-maintenance-form" onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hostname *</label>
+                    <input required type="text" value={formData.hostname} onChange={e => setFormData({...formData, hostname: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="server-01" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Task Type *</label>
+                    <input required type="text" value={formData.task_type} onChange={e => setFormData({...formData, task_type: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="OS Patching" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Assigned To</label>
+                    <input type="text" value={formData.assigned_to || ''} onChange={e => setFormData({...formData, assigned_to: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="john.doe@example.com" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Next Maintenance Date *</label>
+                    <input required type="date" value={formData.next_maintenance_date} onChange={e => setFormData({...formData, next_maintenance_date: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Interval (Days) *</label>
+                    <input required type="number" min="1" value={formData.interval_days} onChange={e => setFormData({...formData, interval_days: parseInt(e.target.value) || 30})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</label>
+                    <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none">
+                      <option value="Scheduled">Scheduled</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Notes</label>
+                    <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Requirements or details..." />
+                  </div>
+                </div>
+              </form>
+            </div>
+            
+            <div className="p-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-900/50 mt-auto">
+              <button 
+                type="button"
+                onClick={handleCloseModal}
+                className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                form="add-maintenance-form"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSubmitting ? 'Saving...' : 'Save Schedule'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

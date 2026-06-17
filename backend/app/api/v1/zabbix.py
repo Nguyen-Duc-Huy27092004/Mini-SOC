@@ -588,3 +588,29 @@ async def test_notification(
 ) -> ZabbixNotificationOut:
     logger.info("zabbix_api_test_notification", email=body.email)
     return await zabbix_service.send_test_notification(db, body.email)
+
+
+@router.get(
+    "/smtp-status",
+    summary="Check SMTP configuration status",
+    tags=["Zabbix - Notifications"],
+)
+async def get_smtp_status(
+    _: User = Depends(require_roles(_ROLES)),
+    __: User = Depends(require_password_changed),
+) -> Dict[str, Any]:
+    """Check if SMTP is configured correctly."""
+    _check_enabled()
+    is_enabled = getattr(settings, "NOTIFICATION_ENABLED", False)
+    smtp_host = getattr(settings, "SMTP_HOST", "")
+    smtp_user = getattr(settings, "SMTP_USER", "")
+    
+    is_configured = bool(smtp_host and smtp_user)
+    
+    return {
+        "enabled": is_enabled,
+        "configured": is_configured,
+        "host": smtp_host,
+        "user": smtp_user if is_configured else None
+    }
+
