@@ -196,6 +196,28 @@ else
     log_ok "Zabbix enabled → $ZABBIX_API_URL"
 fi
 
+# ──── EMAIL NOTIFICATIONS ────
+echo ""
+log_info "Email Notification settings (leave SMTP Host empty to disable):"
+read -rp "  SMTP Host       [e.g. smtp.gmail.com, or ENTER to disable]: " SMTP_HOST
+if [[ -z "$SMTP_HOST" ]]; then
+    NOTIFICATION_ENABLED="false"
+    SMTP_PORT="587"
+    SMTP_USER=""
+    SMTP_PASSWORD=""
+    SMTP_FROM_EMAIL=""
+    log_warn "Email Notifications disabled. You can enable it later in .env.production"
+else
+    NOTIFICATION_ENABLED="true"
+    read -rp "  SMTP Port       [default: 587]: " SMTP_PORT
+    SMTP_PORT="${SMTP_PORT:-587}"
+    read -rp "  SMTP User       [e.g. you@gmail.com]: " SMTP_USER
+    read -rsp "  SMTP Password: " SMTP_PASSWORD; echo ""
+    read -rp "  From Email      [default: \$SMTP_USER]: " SMTP_FROM_EMAIL
+    SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-$SMTP_USER}"
+    log_ok "Email Notifications enabled via $SMTP_HOST"
+fi
+
 # ──── ADMIN USER ────
 echo ""
 log_info "Mini-SOC admin account:"
@@ -339,6 +361,14 @@ printf 'ZABBIX_API_PASSWORD=%s\n'              "$ZABBIX_API_PASSWORD"
 printf 'ZABBIX_VERIFY_SSL=false\n'
 printf 'ZABBIX_TIMEOUT=30\n'
 printf 'ZABBIX_ENABLED=%s\n'                   "$ZABBIX_ENABLED"
+printf '\n'
+printf '# ── Email Notifications ──────────────────────────────────────────\n'
+printf 'NOTIFICATION_ENABLED=%s\n'             "$NOTIFICATION_ENABLED"
+printf 'SMTP_HOST=%s\n'                        "$SMTP_HOST"
+printf 'SMTP_PORT=%s\n'                        "$SMTP_PORT"
+printf 'SMTP_USER=%s\n'                        "$SMTP_USER"
+printf 'SMTP_PASSWORD=%s\n'                    "$SMTP_PASSWORD"
+printf 'SMTP_FROM_EMAIL=%s\n'                  "$SMTP_FROM_EMAIL"
 printf '\n'
 printf '# ── Frontend build-time URLs ─────────────────────────────────────\n'
 printf 'VITE_API_URL=http://%s:%s/api/v1\n'   "$SERVER_IP" "$NGINX_PORT"

@@ -115,6 +115,13 @@ services:
       ZABBIX_VERIFY_SSL: "false"
       ZABBIX_TIMEOUT: "30"
       ZABBIX_ENABLED: ${ZABBIX_ENABLED:-true}
+      # Email Notifications
+      NOTIFICATION_ENABLED: ${NOTIFICATION_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
       # GeoIP / Observability
       GEOIP_DB_PATH: /usr/share/GeoIP/GeoLite2-City.mmdb
       ENABLE_SENTRY: "false"
