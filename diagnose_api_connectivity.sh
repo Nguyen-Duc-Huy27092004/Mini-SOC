@@ -109,22 +109,30 @@ else
         log_info "Test 3: HTTPS/TLS connectivity..."
         
         # Prepare curl options
-        CURL_OPTS="-s -o /dev/null -w %{http_code}"
+        CURL_OPTS="-s"
         if [ "${WAZUH_VERIFY_SSL:-true}" = "false" ]; then
             CURL_OPTS="$CURL_OPTS -k"
         fi
         
-        HTTP_CODE=$(curl $CURL_OPTS "$WAZUH_API_URL" 2>/dev/null || echo "000")
+        # Capture raw verbose output and http code separately
+        HTTP_RESPONSE=$(curl $CURL_OPTS -v "$WAZUH_API_URL" 2>&1)
+        HTTP_CODE=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" "$WAZUH_API_URL" 2>/dev/null || echo "000")
         
         if [ "$HTTP_CODE" = "000" ]; then
-            log_error "Không thể kết nối HTTPS tới Wazuh API"
+            log_error "Không thể kết nối HTTPS tới Wazuh API (HTTP 000)"
+            log_warning "--- CHI TIẾT LỖI CURL ---"
+            echo "$HTTP_RESPONSE" | grep -v "^*" | head -n 10 | sed 's/^/  /'
+            echo "-------------------------"
             log_error "→ SSL/TLS handshake failed hoặc service không chạy"
             WAZUH_STATUS="HTTPS_FAILED"
-            WAZUH_ERROR="SSL/TLS connection failed"
+            WAZUH_ERROR="SSL/TLS connection failed. Xem chi tiết lỗi curl bên trên."
         elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
             log_success "Wazuh API responds (HTTP $HTTP_CODE)"
         else
             log_warning "Wazuh API returned HTTP $HTTP_CODE"
+            log_warning "--- NỘI DUNG PHẢN HỒI ---"
+            echo "$HTTP_RESPONSE" | tail -n 10 | sed 's/^/  /'
+            echo "-------------------------"
         fi
     fi
     
@@ -162,19 +170,21 @@ else
                     log_success "Wazuh API trả về danh sách agents: $AGENT_COUNT agents"
                 else
                     log_warning "Wazuh API không trả về agents list"
-                    log_info "Response: ${AGENTS_RESPONSE:0:200}"
+                    log_warning "Response: ${AGENTS_RESPONSE:0:200}"
                 fi
                 
             else
                 log_error "Wazuh authentication failed"
-                log_error "Response: ${AUTH_RESPONSE:0:200}"
+                log_warning "--- CHI TIẾT LỖI TỪ WAZUH ---"
+                echo "$AUTH_RESPONSE" | sed 's/^/  /'
+                echo "-----------------------------"
                 
                 if echo "$AUTH_RESPONSE" | grep -qi "invalid credentials" 2>/dev/null || false; then
                     WAZUH_STATUS="INVALID_CREDENTIALS"
                     WAZUH_ERROR="Username hoặc password sai"
                 elif echo "$AUTH_RESPONSE" | grep -qi "Connection refused" 2>/dev/null || false; then
                     WAZUH_STATUS="CONNECTION_REFUSED"
-                    WAZUH_ERROR="Wazuh service không chạy"
+                    WAZUH_ERROR="Wazuh service không chạy (Connection refused)"
                 else
                     WAZUH_STATUS="AUTH_FAILED"
                     WAZUH_ERROR="Authentication failed: ${AUTH_RESPONSE:0:100}"
@@ -208,12 +218,18 @@ else
     
     # Test 1: HTTP connectivity
     log_info "Test 1: HTTP connectivity..."
+    
+    # Capture raw verbose output
+    HTTP_RESPONSE=$(curl -s -v -X POST -H "Content-Type: application/json-rpc" -d '{"jsonrpc":"2.0","method":"apiinfo.version","params":[],"id":1}' "$ZABBIX_API_URL" 2>&1)
     HTTP_CODE=$(curl -s -X POST -H "Content-Type: application/json-rpc" -d '{"jsonrpc":"2.0","method":"apiinfo.version","params":[],"id":1}' -o /dev/null -w %{http_code} "$ZABBIX_API_URL" 2>/dev/null || echo "000")
     
     if [ "$HTTP_CODE" = "000" ]; then
         log_error "Cannot connect to Zabbix API"
+        log_warning "--- CHI TIẾT LỖI CURL ---"
+        echo "$HTTP_RESPONSE" | grep -v "^*" | head -n 10 | sed 's/^/  /'
+        echo "-------------------------"
         ZABBIX_STATUS="CONNECTION_FAILED"
-        ZABBIX_ERROR="Cannot reach $ZABBIX_API_URL"
+        ZABBIX_ERROR="Cannot reach $ZABBIX_API_URL. Xem chi tiết lỗi curl bên trên."
     elif [ "$HTTP_CODE" = "200" ]; then
         log_success "Zabbix API endpoint accessible (HTTP $HTTP_CODE)"
         
@@ -273,25 +289,34 @@ EOF
                     log_success "Zabbix API trả về danh sách hosts: $HOST_COUNT hosts"
                 else
                     log_warning "Zabbix API không trả về hosts list"
+                    log_warning "Zabbix Response: $HOSTS_RESPONSE"
                 fi
                 
             else
                 log_error "Zabbix authentication failed"
-                log_error "Response: ${AUTH_RESPONSE:0:200}"
+                log_warning "--- CHI TIẾT LỖI TỪ ZABBIX ---"
+                echo "$AUTH_RESPONSE" | sed 's/^/  /'
+                echo "-------------------------------"
                 
                 if echo "$AUTH_RESPONSE" | grep -qi "incorrect.*password" 2>/dev/null || false; then
                     ZABBIX_STATUS="INVALID_CREDENTIALS"
                     ZABBIX_ERROR="Username hoặc password sai"
+                elif echo "$AUTH_RESPONSE" | grep -qi "Account is blocked" 2>/dev/null || false; then
+                    ZABBIX_STATUS="ACCOUNT_BLOCKED"
+                    ZABBIX_ERROR="Tài khoản bị block (quá nhiều lần thử sai)"
                 else
                     ZABBIX_STATUS="AUTH_FAILED"
-                    ZABBIX_ERROR="Authentication failed"
+                    ZABBIX_ERROR="Authentication failed: ${AUTH_RESPONSE:0:100}"
                 fi
             fi
         fi
     else
         log_warning "Zabbix API returned HTTP $HTTP_CODE"
+        log_warning "--- NỘI DUNG PHẢN HỒI ---"
+        echo "$HTTP_RESPONSE" | grep -v "^*" | tail -n 10 | sed 's/^/  /'
+        echo "-------------------------"
         ZABBIX_STATUS="HTTP_ERROR"
-        ZABBIX_ERROR="HTTP $HTTP_CODE"
+        ZABBIX_ERROR="HTTP $HTTP_CODE. Xem chi tiết phản hồi bên trên."
     fi
 fi
 
