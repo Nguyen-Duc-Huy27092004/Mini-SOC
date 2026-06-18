@@ -148,7 +148,7 @@ else
             
             if echo "$AUTH_RESPONSE" | grep -q "token" 2>/dev/null || false; then
                 log_success "Wazuh authentication successful"
-                WAZUH_TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
+                WAZUH_TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 | tr -d '\r\n' || echo "")
                 log_info "Received token: ${WAZUH_TOKEN:0:20}..."
                 WAZUH_STATUS="OK"
                 

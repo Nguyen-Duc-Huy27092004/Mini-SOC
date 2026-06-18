@@ -78,7 +78,7 @@ class ZabbixAuthManager:
             "jsonrpc": "2.0",
             "method": "user.login",
             "params": {
-                "user": self._user,
+                "username": self._user,
                 "password": self._password,
             },
             "id": 1,

@@ -130,9 +130,9 @@ async def lifespan(app: FastAPI):
     global sync_agents_task
     sync_agents_task = asyncio.create_task(_sync_agents_loop())
 
-    # Start polling alerts from API (fallback for Windows)
-    global poll_alerts_task
-    poll_alerts_task = asyncio.create_task(_poll_wazuh_alerts_loop())
+    # Start polling alerts from API (fallback for Windows) - DISABLED: Wazuh API has no /alerts endpoint
+    # global poll_alerts_task
+    # poll_alerts_task = asyncio.create_task(_poll_wazuh_alerts_loop())
 
     # Start periodic Zabbix sync
     global sync_zabbix_task
