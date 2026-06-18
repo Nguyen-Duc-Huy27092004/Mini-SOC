@@ -208,7 +208,7 @@ else
     
     # Test 1: HTTP connectivity
     log_info "Test 1: HTTP connectivity..."
-    HTTP_CODE=$(curl -s -o /dev/null -w %{http_code} "$ZABBIX_API_URL" 2>/dev/null || echo "000")
+    HTTP_CODE=$(curl -s -X POST -H "Content-Type: application/json-rpc" -d '{"jsonrpc":"2.0","method":"apiinfo.version","params":[],"id":1}' -o /dev/null -w %{http_code} "$ZABBIX_API_URL" 2>/dev/null || echo "000")
     
     if [ "$HTTP_CODE" = "000" ]; then
         log_error "Cannot connect to Zabbix API"
