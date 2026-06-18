@@ -219,12 +219,15 @@ class ZabbixClient:
     ) -> List[Dict[str, Any]]:
         """Retrieve all monitored hosts."""
         params: Dict[str, Any] = {
-            "monitored_hosts": monitored_hosts,
             "output": output or ["hostid", "host", "name", "status", "available",
                                  "error", "description", "ipmi_available"],
             "selectGroups": selectGroups,
             "selectInterfaces": selectInterfaces,
         }
+        # Zabbix 7.0+ compatibility: monitored_hosts is deprecated, use filter
+        if monitored_hosts:
+            params["filter"] = {"status": "0"}
+
         if selectItems:
             params["selectItems"] = selectItems
 
@@ -255,8 +258,8 @@ class ZabbixClient:
             "output": ["itemid", "hostid", "name", "key_", "lastvalue",
                        "units", "value_type", "lastclock", "status"],
             "hostids": host_ids,
-            "monitored": True,
             "limit": limit,
+            "filter": {"status": "0"}  # Zabbix 7.0+ compatibility (replaces monitored)
         }
         if key_search:
             params["search"] = {"key_": key_search}
@@ -276,15 +279,14 @@ class ZabbixClient:
             "output": ["triggerid", "description", "priority", "status",
                        "value", "lastchange", "error", "hosts"],
             "selectHosts": ["hostid", "host", "name"],
-            "monitored": True,
-            "active": True,
             "min_severity": min_severity,
             "sortfield": "priority",
             "sortorder": "DESC",
             "limit": limit,
+            "filter": {"status": "0"}  # Zabbix 7.0+ compatibility (replaces monitored/active)
         }
         if only_true:
-            params["value"] = 1  # TRIGGER_VALUE_TRUE (problem state)
+            params["filter"]["value"] = "1"  # TRIGGER_VALUE_TRUE (problem state)
 
         result = await self._call("trigger.get", params)
         return result if isinstance(result, list) else []

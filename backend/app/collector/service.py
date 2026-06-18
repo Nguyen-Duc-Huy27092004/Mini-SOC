@@ -274,7 +274,7 @@ class AlertsCollectorService:
                             
                         existing.wazuh_agent_version = agent_data.get("version")
                         existing.node_name = agent_data.get("node_name")
-                        existing.last_keep_alive = agent_data.get("lastKeepAlive")
+                        existing.last_keepalive = agent_data.get("lastKeepAlive")
 
                     else:
                         
@@ -306,7 +306,7 @@ class AlertsCollectorService:
                                 os_version=os_version,
                                 wazuh_agent_version=agent_data.get("version"),
                                 node_name=agent_data.get("node_name"),
-                                last_keep_alive=agent_data.get("lastKeepAlive")
+                                last_keepalive=agent_data.get("lastKeepAlive")
                             )
                         )
 
