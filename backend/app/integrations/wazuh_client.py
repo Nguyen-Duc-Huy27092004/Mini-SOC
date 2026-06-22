@@ -216,7 +216,8 @@ class WazuhAPIClient:
 
             session = await self._get_session()
 
-            url = urljoin(self.base_url, endpoint)
+            # Ensure we don't discard any path from base_url if endpoint starts with /
+            url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
 
             headers = {
                 "Authorization": f"Bearer {token}",
