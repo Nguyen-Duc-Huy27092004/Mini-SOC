@@ -380,6 +380,26 @@ class AlertsCollectorService:
             return 0
 
     # =========================================================
+    # WEBHOOK ENQUEUE
+    # =========================================================
+
+    def enqueue_alert(self, raw_alert: dict) -> bool:
+        """
+        Enqueue an alert from an external source (like a Webhook).
+        Returns True if successful, False if queue is full.
+        """
+        if not self._is_running:
+            return False
+
+        try:
+            self.queue.put_nowait(raw_alert)
+            return True
+
+        except asyncio.QueueFull:
+            self._dropped_count += 1
+            return False
+
+    # =========================================================
     # SHUTDOWN
     # =========================================================
 

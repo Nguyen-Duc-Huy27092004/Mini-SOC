@@ -10,6 +10,7 @@ from app.api.v1.monitoring import router as monitoring_router
 from app.api.v1.soc_dashboard import router as soc_dashboard_router
 from app.api.v1.users import router as users_router
 from app.api.v1.zabbix import router as zabbix_router
+from app.api.v1.wazuh import router as wazuh_router
 
 api_router = APIRouter()
 
@@ -24,4 +25,6 @@ api_router.include_router(audit_router, prefix="/audit", tags=["Audit"])
 api_router.include_router(monitoring_router, prefix="/monitoring", tags=["Monitoring"])
 # ── Zabbix Integration (additive — Wazuh routes untouched) ──────────────────
 api_router.include_router(zabbix_router, prefix="/zabbix", tags=["Zabbix"])
+# ── Wazuh Integration ───────────────────────────────────────────────────────
+api_router.include_router(wazuh_router, prefix="/wazuh", tags=["Wazuh"])
 
