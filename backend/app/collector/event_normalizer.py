@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -83,6 +84,7 @@ class EventNormalizer:
             rule_group = rule_groups[0] if rule_groups else parsed.category
 
             event = WazuhEvent(
+                id=uuid.uuid4(),
                 event_id=parsed.event_id or self._generate_correlation_id(parsed),
                 event_timestamp=parsed.timestamp,
                 agent_id=parsed.agent_id,
