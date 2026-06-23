@@ -134,8 +134,8 @@ export function MaintenanceCenter() {
                     <div className={`flex items-center gap-2 p-2.5 rounded-lg text-xs font-semibold ${getUrgencyColor(maint.is_overdue, maint.days_until_due)}`}>
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       {maint.is_overdue 
-                        ? `OVERDUE BY ${Math.abs(maint.days_until_due || 0)} DAYS` 
-                        : `DUE IN ${maint.days_until_due} DAYS`
+                        ? `QUÁ HẠN ${Math.abs(maint.days_until_due || 0)} NGÀY` 
+                        : `CÒN ${maint.days_until_due} NGÀY`
                       }
                     </div>
                   )}
@@ -224,7 +224,7 @@ export function MaintenanceCenter() {
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ghi chú</label>
-                    <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Requirements or details..." />
+                    <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Yêu cầu hoặc chi tiết..." />
                   </div>
                 </div>
               </form>
@@ -244,7 +244,7 @@ export function MaintenanceCenter() {
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? 'Saving...' : 'Save Schedule'}
+                {isSubmitting ? 'Đang lưu...' : 'Lưu lịch'}
               </button>
             </div>
           </div>

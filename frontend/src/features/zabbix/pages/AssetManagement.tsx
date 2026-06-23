@@ -105,7 +105,7 @@ export function AssetManagement() {
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
               type="text"
-              placeholder="Search assets..."
+              placeholder="Tìm kiếm tài sản..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-indigo-500 w-64 transition"
@@ -157,22 +157,22 @@ export function AssetManagement() {
                           </div>
                           <div>
                             <div className="font-semibold text-sm text-slate-200">{asset.hostname}</div>
-                            <div className="text-[10px] font-mono text-slate-500 mt-0.5">{asset.ip_address || 'No IP specified'}</div>
+                            <div className="text-[10px] font-mono text-slate-500 mt-0.5">{asset.ip_address || 'Chưa có IP'}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5 text-xs text-slate-300">
                           <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                          {asset.location || 'Unknown'}
+                          {asset.location || 'Không rõ'}
                         </div>
                         <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">
-                          {asset.department || 'Unassigned'}
+                          {asset.department || 'Chưa phân bổ'}
                         </div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="text-xs text-slate-300">
-                          {asset.vendor || 'Unknown Vendor'} <span className="text-slate-500">—</span> {asset.model || 'Unknown Model'}
+                          {asset.vendor || 'Không rõ NSX'} <span className="text-slate-500">—</span> {asset.model || 'Không rõ Model'}
                         </div>
                         <div className="text-[10px] text-slate-500 mt-1 font-mono uppercase">
                           SN: {asset.serial_number || 'N/A'}
@@ -188,7 +188,7 @@ export function AssetManagement() {
                             <div className="text-[10px] text-slate-500 mt-1">
                               {new Date() > new Date(asset.warranty_expiration) 
                                 ? <span className="text-rose-400">Hết hạn</span> 
-                                : 'Active'
+                                : 'Còn hạn'
                               }
                             </div>
                           </div>
@@ -204,9 +204,9 @@ export function AssetManagement() {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition">Edit</button>
+                        <button className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition">Chỉnh sửa</button>
                         <span className="text-slate-700 mx-2">|</span>
-                        <button className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition">Delete</button>
+                        <button className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition">Xóa</button>
                       </td>
                     </tr>
                   ))
@@ -224,7 +224,7 @@ export function AssetManagement() {
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                 <Server className="w-5 h-5 text-indigo-400" />
-                Add New Asset
+                Thêm tài sản CNTT
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-200">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -237,45 +237,45 @@ export function AssetManagement() {
               <form id="add-asset-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hostname *</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tên máy chủ *</label>
                     <input required type="text" value={formData.hostname} onChange={e => setFormData({...formData, hostname: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="server-01" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">IP Address</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Địa chỉ IP</label>
                     <input type="text" value={formData.ip_address || ''} onChange={e => setFormData({...formData, ip_address: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="192.168.1.100" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Location</label>
-                    <input type="text" value={formData.location || ''} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="Data Center A" />
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Vị trí</label>
+                    <input type="text" value={formData.location || ''} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="Trung tâm dữ liệu A" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Department</label>
-                    <input type="text" value={formData.department || ''} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="Engineering" />
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Phòng ban</label>
+                    <input type="text" value={formData.department || ''} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="Kỹ thuật" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Vendor</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nhà sản xuất</label>
                     <input type="text" value={formData.vendor || ''} onChange={e => setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="Dell" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Model</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dòng máy</label>
                     <input type="text" value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="PowerEdge R740" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Serial Number</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Số Serial</label>
                     <input type="text" value={formData.serial_number || ''} onChange={e => setFormData({...formData, serial_number: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="SN123456" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lifecycle Status</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Trạng thái vòng đời</label>
                     <select value={formData.lifecycle_status} onChange={e => setFormData({...formData, lifecycle_status: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none">
-                      <option value="Active">Active</option>
-                      <option value="Maintenance">Maintenance</option>
-                      <option value="End of Life">End of Life</option>
-                      <option value="Decommissioned">Decommissioned</option>
+                      <option value="Active">Đang hoạt động (Active)</option>
+                      <option value="Maintenance">Bảo trì (Maintenance)</option>
+                      <option value="End of Life">Hết hạn (End of Life)</option>
+                      <option value="Decommissioned">Đã thu hồi (Decommissioned)</option>
                     </select>
                   </div>
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Notes</label>
-                    <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Additional details..." />
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ghi chú</label>
+                    <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Thông tin thêm..." />
                   </div>
                 </div>
               </form>
@@ -287,7 +287,7 @@ export function AssetManagement() {
                 onClick={handleCloseModal}
                 className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition"
               >
-                Cancel
+                Hủy
               </button>
               <button 
                 type="submit"
@@ -295,7 +295,7 @@ export function AssetManagement() {
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? 'Saving...' : 'Save Asset'}
+                {isSubmitting ? 'Đang lưu...' : 'Lưu tài sản'}
               </button>
             </div>
           </div>

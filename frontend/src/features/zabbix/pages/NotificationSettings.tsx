@@ -109,8 +109,8 @@ export function NotificationSettings() {
           <div>
             <h3 className="text-sm font-semibold text-rose-400">Thông báo email bị tắt hoặc không được cấu hình</h3>
             <p className="text-xs text-rose-300/80 mt-1">
-              {!smtpStatus.enabled ? 'NOTIFICATION_ENABLED is set to false. ' : ''}
-              {!smtpStatus.configured ? 'SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) are missing in the .env file. ' : ''}
+              {!smtpStatus.enabled ? 'NOTIFICATION_ENABLED đang được đặt là false. ' : ''}
+              {!smtpStatus.configured ? 'Thiếu thông tin đăng nhập SMTP (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) trong file .env. ' : ''}
               Cần bật và cấu hình email để gửi thông báo
             </p>
           </div>
@@ -141,7 +141,7 @@ export function NotificationSettings() {
                 className="w-full py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {testing ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {testing ? 'Sending...' : 'Send Test Alert'}
+                {testing ? 'Đang gửi...' : 'Gửi cảnh báo thử'}
               </button>
 
               {testResult && (
@@ -200,7 +200,7 @@ export function NotificationSettings() {
                           </span>
                         </div>
                         <p className="text-xs text-slate-400 truncate mb-2">
-                          Đến: {log.recipients || 'Unknown'}
+                          Đến: {log.recipients || 'Không rõ'}
                         </p>
                         
                         {log.status === 'failed' && log.error_msg && (

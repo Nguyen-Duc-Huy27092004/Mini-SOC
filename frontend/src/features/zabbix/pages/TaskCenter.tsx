@@ -134,7 +134,7 @@ export function TaskCenter() {
                     disabled={updating === task.id}
                     className="flex-1 md:flex-none px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    Start Task <ArrowRight className="w-3 h-3" />
+                    Bắt đầu <ArrowRight className="w-3 h-3" />
                   </button>
                 ) : (
                   <button

@@ -19,13 +19,13 @@ export function InfrastructureDashboard() {
       try {
         const [ovData, topData, probData, hostsData] = await Promise.all([
           getOverview(),
-          getTopServers(5),
+          getTopServers(100),
           getProblems(),
           getHosts()
         ]);
         setOverview(ovData);
         setTopServers(topData);
-        setProblems(probData.slice(0, 5)); // show top 5 active problems
+        setProblems(probData); // Hiển thị toàn bộ các vấn đề (có scroll)
         setHosts(hostsData);
       } catch (err) {
         console.error('Failed to fetch dashboard data', err);
@@ -92,7 +92,7 @@ export function InfrastructureDashboard() {
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Máy chủ được theo dõi</p>
             <p className="text-2xl font-bold text-slate-200">{overview.total_servers}</p>
-            <p className="text-xs text-emerald-400 mt-1">{overview.online_servers} online</p>
+            <p className="text-xs text-emerald-400 mt-1">{overview.online_servers} hoạt động</p>
           </div>
           <div className="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
             <Server className="w-5 h-5 text-indigo-400" />
@@ -137,18 +137,18 @@ export function InfrastructureDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 Servers by Resource */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-4">
+        {/* All Servers by Resource */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 flex flex-col max-h-[600px]">
+          <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-4 shrink-0">
             <Activity className="w-4 h-4 text-indigo-400" />
-            Top 5 máy chủ tiêu tốn tài nguyên
+            Trạng thái tài nguyên máy chủ ({topServers.length})
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-2">
             {topServers.map(server => (
               <div key={server.host_id} className="bg-slate-950 border border-slate-800/50 p-3 rounded-lg flex flex-col gap-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-semibold text-slate-300">{server.host_name}</span>
-                  <span className="text-[10px] text-slate-500 font-mono">{server.ip_address || 'Unknown IP'}</span>
+                  <span className="text-[10px] text-slate-500 font-mono">{server.ip_address || 'Không rõ IP'}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   {/* CPU Bar */}
@@ -206,12 +206,12 @@ export function InfrastructureDashboard() {
         </div>
 
         {/* Top Active Problems */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-4">
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 flex flex-col max-h-[600px]">
+          <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-4 shrink-0">
             <Zap className="w-4 h-4 text-rose-400" />
             Các vấn đề mới được phát hiện
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto pr-2">
             {problems.map(p => (
               <div key={p.event_id} className="bg-slate-950 border border-slate-800/50 p-3 rounded-lg flex items-start gap-3">
                 <div 
@@ -266,7 +266,7 @@ export function InfrastructureDashboard() {
             <thead>
               <tr className="bg-slate-900/80 border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
                 <th className="px-5 py-3">Tên máy chủ</th>
-                <th className="px-5 py-3">IP Address</th>
+                <th className="px-5 py-3">Địa chỉ IP</th>
                 <th className="px-5 py-3">Trạng thái</th>
                 <th className="px-5 py-3 text-center">Vấn đề</th>
                 <th className="px-5 py-3">Cảnh báo cao nhất</th>
