@@ -109,6 +109,7 @@ class ZabbixClientV7:
             timeout=self._timeout,
             headers={
                 "Content-Type": "application/json-rpc",
+                "Authorization": f"Bearer {self._api_token}",
             },
             raise_for_status=False,
         )
@@ -145,12 +146,11 @@ class ZabbixClientV7:
         """
         session = await self._get_session()
 
-        # Build JSON-RPC request
+        # Build JSON-RPC request (without 'auth' in payload for Zabbix 7.4+)
         payload: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
-            "auth": self._api_token,  # Zabbix 7.4: Use API token directly
             "id": _next_rpc_id(),
         }
 

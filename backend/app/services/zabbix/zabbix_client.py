@@ -118,7 +118,6 @@ class ZabbixClient:
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
-            "auth": token,
             "id": _next_rpc_id(),
         }
 
@@ -126,7 +125,9 @@ class ZabbixClient:
         logger.debug("zabbix_request", method=method, url=self.api_url)
 
         try:
-            async with session.post(self.api_url, json=payload) as resp:
+            # For Zabbix 7.4+, we pass the auth token in the headers
+            headers = {"Authorization": f"Bearer {token}"}
+            async with session.post(self.api_url, json=payload, headers=headers) as resp:
                 latency = round(time.monotonic() - start, 3)
                 status_code = resp.status
                 body_text = await resp.text()

@@ -219,8 +219,9 @@ class WazuhAPIClient:
             # Ensure we don't discard any path from base_url if endpoint starts with /
             url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
 
+            clean_token = token.strip() if isinstance(token, str) else token
             headers = {
-                "Authorization": f"Bearer {token}",
+                "Authorization": f"Bearer {clean_token}",
                 "Content-Type": "application/json",
             }
 
