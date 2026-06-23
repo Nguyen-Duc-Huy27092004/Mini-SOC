@@ -26,6 +26,8 @@ async def test_creates_incident_on_high_severity(db_session):
         is_suppressed=False,
         wazuh_data={},
     )
+    db_session.add(event)
+    await db_session.flush()
     inc = await engine.process_event(event, db_session)
     assert inc is not None
     assert inc.severity == "critical"
