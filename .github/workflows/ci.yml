@@ -45,7 +45,8 @@ jobs:
           REDIS_HOST: localhost
           WAZUH_API_PASSWORD: test-wazuh-password
           WAZUH_ALERTS_FILE: ""
-        run: pytest -q
+          PYTHONPATH: .
+        run: python -m pytest -q
 
   frontend:
     runs-on: ubuntu-latest
