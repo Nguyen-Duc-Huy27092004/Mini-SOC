@@ -76,6 +76,7 @@ class AlertSuppressionService:
             return False
 
         except Exception:
+            await db.rollback()
             await logger.aerror("suppression_check_error", exc_info=True)
             return False  # On error, allow through
 
@@ -235,6 +236,7 @@ class AlertSuppressionService:
             return False
 
         except Exception:
+            await db.rollback()
             await logger.adebug("duplicate_check_error", exc_info=True)
             return False
 
@@ -285,6 +287,7 @@ class AlertSuppressionService:
             return True
 
         except Exception:
+            await db.rollback()
             await logger.adebug("burst_check_error", exc_info=True)
             return False
 
@@ -340,6 +343,7 @@ class AlertSuppressionService:
             return True
 
         except Exception:
+            await db.rollback()
             await logger.adebug("repeated_attack_check_error", exc_info=True)
             return False
 

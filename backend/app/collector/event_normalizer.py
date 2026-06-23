@@ -288,6 +288,12 @@ class EventRouter:
             async with self._transaction(db):
 
                 # ============================================================
+                # PERSIST INITIAL EVENT (Ensure event_id exists for relations)
+                # ============================================================
+                db.add(event)
+                await db.flush()
+
+                # ============================================================
                 # SUPPRESSION
                 # ============================================================
 
@@ -323,11 +329,8 @@ class EventRouter:
                         event.risk_score = risk_row.event_risk_score
 
                 # ============================================================
-                # PERSIST
+                # CORRELATION
                 # ============================================================
-
-                db.add(event)
-                await db.flush()
 
                 from app.services.correlation_engine import correlation_engine
 
