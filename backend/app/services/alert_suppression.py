@@ -12,7 +12,7 @@ Also provides suppress_and_group() for in-memory grouping (used by API layer).
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from hashlib import md5
+from hashlib import sha256
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -351,4 +351,4 @@ class AlertSuppressionService:
     def _fingerprint(event: WazuhEvent) -> str:
         """Generate dedup fingerprint for an event."""
         raw = f"{event.agent_id}:{event.rule_id}:{event.source_ip}:{event.dest_ip}:{event.source_user}"
-        return md5(raw.encode()).hexdigest()  # noqa: S324 — not crypto use
+        return sha256(raw.encode()).hexdigest()  # noqa: S324 — not crypto use

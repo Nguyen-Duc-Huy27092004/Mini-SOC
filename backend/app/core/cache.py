@@ -27,7 +27,7 @@ def _cache_key(prefix: str, *args, **kwargs) -> str:
     # Hash args
     if args:
         args_str = str(args)
-        args_hash = hashlib.md5(args_str.encode()).hexdigest()[:8]
+        args_hash = hashlib.sha256(args_str.encode()).hexdigest()[:8]
         key_parts.append(f"args:{args_hash}")
 
     # Hash kwargs
@@ -35,7 +35,7 @@ def _cache_key(prefix: str, *args, **kwargs) -> str:
         # Sort kwargs for deterministic hashing
         sorted_kwargs = sorted(kwargs.items())
         kwargs_str = str(sorted_kwargs)
-        kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()[:8]
+        kwargs_hash = hashlib.sha256(kwargs_str.encode()).hexdigest()[:8]
         key_parts.append(f"kwargs:{kwargs_hash}")
 
     return ":".join(key_parts)
@@ -78,7 +78,7 @@ def cached(
 
                 if cached_value:
                     try:
-                        result = pickle.loads(cached_value.encode("latin1"))
+                        result = pickle.loads(cached_value.encode("latin1"))  # nosec B301
 
                         await logger.adebug(
                             "cache_hit",
