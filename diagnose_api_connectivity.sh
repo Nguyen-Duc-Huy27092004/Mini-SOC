@@ -492,7 +492,8 @@ else
                 log_info "Dùng API Token để xác thực (Zabbix ≥ 5.4)..."
                 Z3_TEST=$(curl --max-time 15 -s -X POST "$ZABBIX_API_URL" \
                     -H "Content-Type: application/json-rpc" \
-                    -d "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"limit\":1},\"auth\":\"${ZABBIX_API_TOKEN}\",\"id\":1}" \
+                    -H "Authorization: Bearer ${ZABBIX_API_TOKEN}" \
+                    -d "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"limit\":1},\"id\":1}" \
                     2>/dev/null) || Z3_TEST=""
 
                 if echo "$Z3_TEST" | grep -q '"result"'; then
@@ -616,9 +617,10 @@ else
             # ── Test Z4: Hosts list ─────────────────────────────────────────
             if [ "$ZABBIX_STATUS" = "OK" ] && [ -n "${ZABBIX_TOKEN:-}" ]; then
                 log_info "Z4: Lấy danh sách hosts..."
-                HOSTS_PAYLOAD=$(printf '{"jsonrpc":"2.0","method":"host.get","params":{"output":["hostid","host"],"limit":5},"auth":"%s","id":2}' "$ZABBIX_TOKEN")
+                HOSTS_PAYLOAD='{"jsonrpc":"2.0","method":"host.get","params":{"output":["hostid","host"],"limit":5},"id":2}'
                 HOSTS_RESP=$(curl --max-time 15 -s -X POST "$ZABBIX_API_URL" \
                     -H "Content-Type: application/json-rpc" \
+                    -H "Authorization: Bearer $ZABBIX_TOKEN" \
                     -d "$HOSTS_PAYLOAD" 2>/dev/null) || HOSTS_RESP=""
 
                 if echo "$HOSTS_RESP" | grep -q '"result"'; then
