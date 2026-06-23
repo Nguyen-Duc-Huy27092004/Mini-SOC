@@ -10,18 +10,18 @@ import { useWebSocket } from '../../shared/hooks/useWebSocket';
 import { SeverityBadge } from '../../shared/ui/SeverityBadge';
 
 const wazuhNav = [
-  { to: '/executive', label: 'Ban Lãnh đạo', icon: Briefcase },
-  { to: '/analyst', label: 'SOC Analyst', icon: ShieldAlert },
-  { to: '/operations', label: 'Vận hành IT', icon: Wrench },
-  { to: '/alerts', label: 'Cảnh báo', icon: Bell },
+  { to: '/executive', label: 'Bảng chính', icon: Briefcase },
+  { to: '/analyst', label: 'Bảng phân tích', icon: ShieldAlert },
+  { to: '/operations', label: 'Bảng vận hành', icon: Wrench },
+  { to: '/alerts', label: 'Bảng cảnh báo', icon: Bell },
 ];
 
 const zabbixNav = [
-  { to: '/infrastructure', label: 'Overview Dashboard', icon: LayoutDashboard },
-  { to: '/infrastructure/assets', label: 'Asset Management', icon: Server },
-  { to: '/infrastructure/maintenance', label: 'Maintenance Center', icon: CalendarClock },
-  { to: '/infrastructure/tasks', label: 'Task Center', icon: ListTodo },
-  { to: '/infrastructure/notifications', label: 'Notifications', icon: MailWarning },
+  { to: '/infrastructure', label: 'Tổng quan', icon: LayoutDashboard },
+  { to: '/infrastructure/assets', label: 'Quản lý máy chủ', icon: Server },
+  { to: '/infrastructure/maintenance', label: 'Trung tâm bảo trì', icon: CalendarClock },
+  { to: '/infrastructure/tasks', label: 'Trung tâm công việc', icon: ListTodo },
+  { to: '/infrastructure/notifications', label: 'Bảng thông báo', icon: MailWarning },
 ];
 
 export function MainLayout() {
@@ -45,8 +45,7 @@ export function MainLayout() {
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-cyan-400 shrink-0" />
             <div>
-              <p className="font-bold text-sm text-white leading-tight">Mini SOC Portal</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest">Enterprise</p>
+              <p className="font-bold text-sm text-white leading-tight">Mini SOC</p>
             </div>
           </div>
         </div>
@@ -74,7 +73,7 @@ export function MainLayout() {
 
           {/* Wazuh Section */}
           <div>
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Threat Monitoring (Wazuh)</p>
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Bảo mật</p>
             <div className="space-y-0.5">
               {wazuhNav.map(({ to, label, icon: Icon }) => (
                 <NavLink
@@ -97,7 +96,7 @@ export function MainLayout() {
 
           {/* Zabbix Section */}
           <div>
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Infrastructure (Zabbix)</p>
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Hệ thống</p>
             <div className="space-y-0.5">
               {zabbixNav.map(({ to, label, icon: Icon }) => (
                 <NavLink
@@ -149,7 +148,7 @@ export function MainLayout() {
           <span className="text-slate-500">Giám sát an ninh thời gian thực · Wazuh</span>
           <span className={`flex items-center gap-1.5 ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
             {connected
-              ? <><Wifi className="w-3.5 h-3.5" /> Realtime</>
+              ? <><Wifi className="w-3.5 h-3.5" /> Thời gian thực </>
               : <><WifiOff className="w-3.5 h-3.5" /> Mất kết nối</>
             }
           </span>

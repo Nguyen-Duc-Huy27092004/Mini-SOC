@@ -100,7 +100,7 @@ export function ExecutiveDashboard() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-white">Tổng quan An ninh — Ban Lãnh đạo</h1>
+        <h1 className="text-2xl font-bold text-white">Tổng quan An ninh</h1>
         <p className="text-sm text-slate-400 mt-1">Dữ liệu thời gian thực từ Wazuh · PostgreSQL</p>
       </header>
 

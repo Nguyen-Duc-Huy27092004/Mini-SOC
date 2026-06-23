@@ -22,3 +22,4 @@ async def db_session() -> AsyncSession:
     async with async_session_maker() as session:
         yield session
         await session.rollback()
+    await engine.dispose()

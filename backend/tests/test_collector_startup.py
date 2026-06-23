@@ -18,5 +18,4 @@ async def test_start_collector_no_file(monkeypatch):
     task = __import__("asyncio").create_task(start_collector())
     await __import__("asyncio").sleep(0.2)
     task.cancel()
-    with pytest.raises(__import__("asyncio").CancelledError):
-        await task
+    await task

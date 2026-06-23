@@ -77,7 +77,7 @@ export function AnalystDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Trung tâm SOC Analyst</h1>
+          <h1 className="text-2xl font-bold text-white">Trung tâm phân tích</h1>
           <p className="text-sm text-slate-400 mt-1">Điều tra · Xác nhận · Phân công sự cố</p>
         </div>
         <button
