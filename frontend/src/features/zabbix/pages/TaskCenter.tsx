@@ -62,7 +62,7 @@ export function TaskCenter() {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <Activity className="w-6 h-6 animate-pulse mr-2" />
-        Loading task recommendations...
+        Đang tải tác vụ đề xuất...
       </div>
     );
   }
@@ -73,12 +73,12 @@ export function TaskCenter() {
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
             <ListTodo className="w-5 h-5 text-indigo-400" />
-            Task Center
+            Trung tâm tác vụ
           </h1>
-          <p className="text-xs text-slate-400 mt-1">AI-generated recommendations and system tasks</p>
+          <p className="text-xs text-slate-400 mt-1">Các tác vụ được đề xuất</p>
         </div>
         <div className="text-xs font-medium bg-indigo-500/10 text-indigo-400 px-3 py-1.5 rounded-lg border border-indigo-500/20">
-          {tasks.length} Active Tasks
+          {tasks.length} Tác vụ đang hoạt động
         </div>
       </div>
 
@@ -86,8 +86,8 @@ export function TaskCenter() {
         {tasks.length === 0 ? (
           <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center">
             <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-3 opacity-50" />
-            <h3 className="text-slate-200 font-medium">All Caught Up</h3>
-            <p className="text-slate-400 text-sm mt-1">There are no recommended tasks at this time.</p>
+            <h3 className="text-slate-200 font-medium"> Hoàn thành</h3>
+            <p className="text-slate-400 text-sm mt-1">Không có tác vụ được đề xuất lúc này.</p>
           </div>
         ) : (
           tasks.map(task => (
@@ -117,11 +117,11 @@ export function TaskCenter() {
                   {task.metric_value && (
                     <span className="flex items-center gap-1">
                       <Activity className="w-3 h-3" />
-                      Metric: {task.metric_value.toFixed(1)}
+                      Giá trị: {task.metric_value.toFixed(1)}
                     </span>
                   )}
                   <span className="uppercase tracking-wider font-semibold opacity-70">
-                    Source: {task.source}
+                    Nguồn: {task.source}
                   </span>
                 </div>
               </div>
@@ -142,7 +142,7 @@ export function TaskCenter() {
                     disabled={updating === task.id}
                     className="flex-1 md:flex-none px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-medium rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    <CheckCircle className="w-3 h-3" /> Resolve
+                    <CheckCircle className="w-3 h-3" /> Đã xử lý
                   </button>
                 )}
                 <button
@@ -150,7 +150,7 @@ export function TaskCenter() {
                   disabled={updating === task.id}
                   className="px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs font-medium rounded-lg transition disabled:opacity-50"
                 >
-                  Dismiss
+                  Từ chối
                 </button>
               </div>
             </div>

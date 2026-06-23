@@ -95,9 +95,9 @@ export function AssetManagement() {
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
             <Server className="w-5 h-5 text-indigo-400" />
-            Asset Management
+            Quản lý tài sản CNTT
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Infrastructure inventory and lifecycle tracking</p>
+          <p className="text-xs text-slate-400 mt-1">Quản lý thông tin tài sản CNTT</p>
         </div>
         
         <div className="flex items-center gap-3">
@@ -116,7 +116,7 @@ export function AssetManagement() {
             className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition"
           >
             <Plus className="w-4 h-4" />
-            Add Asset
+            Thêm tài sản
           </button>
         </div>
       </div>
@@ -125,26 +125,26 @@ export function AssetManagement() {
         {loading ? (
           <div className="flex items-center justify-center p-12 text-slate-400">
             <Activity className="w-6 h-6 animate-pulse mr-2" />
-            Loading asset inventory...
+            Đang tải danh sách tài sản...
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-900/80 border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500 font-semibold">
-                  <th className="px-5 py-4 font-semibold">Hostname / IP</th>
-                  <th className="px-5 py-4 font-semibold">Location / Dept</th>
-                  <th className="px-5 py-4 font-semibold">Hardware Specs</th>
-                  <th className="px-5 py-4 font-semibold">Warranty Expiry</th>
-                  <th className="px-5 py-4 font-semibold">Status</th>
-                  <th className="px-5 py-4 font-semibold text-right">Actions</th>
+                  <th className="px-5 py-4 font-semibold">Tên tài sản / IP</th>
+                  <th className="px-5 py-4 font-semibold">Vị trí / Bộ phận</th>
+                  <th className="px-5 py-4 font-semibold">Thông tin phần cứng</th>
+                  <th className="px-5 py-4 font-semibold">Ngày hết hạn bảo hành</th>
+                  <th className="px-5 py-4 font-semibold">Trạng thái</th>
+                  <th className="px-5 py-4 font-semibold text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {filteredAssets.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-5 py-8 text-center text-slate-500 text-sm">
-                      No assets found matching your criteria.
+                      Không tìm thấy tài sản nào phù hợp với yêu cầu tìm kiếm.
                     </td>
                   </tr>
                 ) : (
@@ -187,14 +187,14 @@ export function AssetManagement() {
                             </div>
                             <div className="text-[10px] text-slate-500 mt-1">
                               {new Date() > new Date(asset.warranty_expiration) 
-                                ? <span className="text-rose-400">Expired</span> 
+                                ? <span className="text-rose-400">Hết hạn</span> 
                                 : 'Active'
                               }
                             </div>
                           </div>
                         ) : (
                           <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                            <CalendarClock className="w-3.5 h-3.5" /> No data
+                            <CalendarClock className="w-3.5 h-3.5" /> Không có dữ liệu
                           </span>
                         )}
                       </td>

@@ -86,7 +86,7 @@ export function NotificationSettings() {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <Activity className="w-6 h-6 animate-pulse mr-2" />
-        Loading notification logs...
+        Đang tải nhật ký thông báo...
       </div>
     );
   }
@@ -97,9 +97,9 @@ export function NotificationSettings() {
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
             <MailWarning className="w-5 h-5 text-indigo-400" />
-            Notification Center
+            Trung tâm thông báo 
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Email alert logs and SMTP configuration testing</p>
+          <p className="text-xs text-slate-400 mt-1">Nhật ký cảnh báo email và kiểm tra cấu hình SMTP</p>
         </div>
       </div>
 
@@ -107,11 +107,11 @@ export function NotificationSettings() {
         <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 flex gap-3">
           <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
           <div>
-            <h3 className="text-sm font-semibold text-rose-400">Email Notifications are Disabled or Not Configured</h3>
+            <h3 className="text-sm font-semibold text-rose-400">Thông báo email bị tắt hoặc không được cấu hình</h3>
             <p className="text-xs text-rose-300/80 mt-1">
               {!smtpStatus.enabled ? 'NOTIFICATION_ENABLED is set to false. ' : ''}
               {!smtpStatus.configured ? 'SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) are missing in the .env file. ' : ''}
-              Email alerts will not be sent until this is resolved.
+              Cần bật và cấu hình email để gửi thông báo
             </p>
           </div>
         </div>
@@ -122,10 +122,10 @@ export function NotificationSettings() {
         {/* Test Email Form */}
         <div className="lg:col-span-1">
           <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 sticky top-6">
-            <h2 className="text-sm font-semibold text-slate-200 mb-4">Send Test Email</h2>
+            <h2 className="text-sm font-semibold text-slate-200 mb-4">Gửi email thử</h2>
             <form onSubmit={handleTestEmail} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Recipient Address</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">Địa chỉ email</label>
                 <input 
                   type="email" 
                   value={testEmail}
@@ -159,12 +159,12 @@ export function NotificationSettings() {
             </form>
 
             <div className="mt-6 pt-6 border-t border-slate-800">
-              <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">Alert Thresholds</h3>
+              <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">Giới hạn cảnh báo</h3>
               <ul className="space-y-2 text-xs text-slate-300">
-                <li className="flex justify-between"><span>CPU Usage:</span> <span className="font-mono text-amber-400">&gt; 90%</span></li>
-                <li className="flex justify-between"><span>Disk Usage:</span> <span className="font-mono text-amber-400">&gt; 90%</span></li>
-                <li className="flex justify-between"><span>Problem Severity:</span> <span className="font-mono text-rose-400">High / Disaster</span></li>
-                <li className="flex justify-between"><span>Maintenance:</span> <span className="font-mono text-blue-400">&lt; 7 Days</span></li>
+                <li className="flex justify-between"><span>CPU đã sử dụng:</span> <span className="font-mono text-amber-400">&gt; 90%</span></li>
+                <li className="flex justify-between"><span>Đĩa đã sử dụng:</span> <span className="font-mono text-amber-400">&gt; 90%</span></li>
+                <li className="flex justify-between"><span>Độ nghiêm trọng của sự cố:</span> <span className="font-mono text-rose-400">High / Disaster</span></li>
+                <li className="flex justify-between"><span>Bảo trì:</span> <span className="font-mono text-blue-400">&lt; 7 Days</span></li>
               </ul>
             </div>
           </div>
@@ -174,14 +174,14 @@ export function NotificationSettings() {
         <div className="lg:col-span-2">
           <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
-              <h2 className="text-sm font-semibold text-slate-200">Recent Dispatch Logs</h2>
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider">Last 50 entries</span>
+              <h2 className="text-sm font-semibold text-slate-200">Nhật ký gửi thông báo gần đây</h2>
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider">50 mục gần nhất</span>
             </div>
             
             <div className="divide-y divide-slate-800/50 max-h-[600px] overflow-y-auto">
               {logs.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 text-sm">
-                  No notifications have been sent yet.
+                  Chưa có thông báo nào được gửi.
                 </div>
               ) : (
                 logs.map(log => (
@@ -200,7 +200,7 @@ export function NotificationSettings() {
                           </span>
                         </div>
                         <p className="text-xs text-slate-400 truncate mb-2">
-                          To: {log.recipients || 'Unknown'}
+                          Đến: {log.recipients || 'Unknown'}
                         </p>
                         
                         {log.status === 'failed' && log.error_msg && (

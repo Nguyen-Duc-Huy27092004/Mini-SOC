@@ -82,9 +82,9 @@ export function MaintenanceCenter() {
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-indigo-400" />
-            Maintenance Center
+            Trung tâm bảo trì
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Preventive maintenance schedules and tracking</p>
+          <p className="text-xs text-slate-400 mt-1">Lịch trình và theo dõi bảo trì phòng ngừa</p>
         </div>
         
         <button 
@@ -92,22 +92,22 @@ export function MaintenanceCenter() {
           className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition shrink-0"
         >
           <Plus className="w-4 h-4" />
-          Schedule Maintenance
+          Lên lịch bảo trì
         </button>
       </div>
 
       {loading ? (
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-12 flex items-center justify-center text-slate-400">
           <Wrench className="w-6 h-6 animate-pulse mr-2" />
-          Loading schedules...
+          Đang tải lịch bảo trì...
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {schedules.length === 0 ? (
             <div className="col-span-full p-8 text-center bg-slate-900/50 border border-slate-800 rounded-xl">
               <CheckCircle className="w-12 h-12 text-emerald-500/50 mx-auto mb-3" />
-              <p className="text-slate-300 font-medium">No Maintenance Scheduled</p>
-              <p className="text-xs text-slate-500 mt-1">Add a schedule to track preventive maintenance.</p>
+              <p className="text-slate-300 font-medium">Không có lịch bảo trì nào</p>
+              <p className="text-xs text-slate-500 mt-1">Thêm lịch bảo trì để theo dõi bảo trì phòng ngừa.</p>
             </div>
           ) : (
             schedules.map(maint => (
@@ -142,16 +142,16 @@ export function MaintenanceCenter() {
 
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
-                      <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Next Maintenance</span>
+                      <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold"> Lần bảo trì tiếp theo</span>
                       <div className="flex items-center gap-1.5 text-slate-200 font-medium">
                         <Clock className="w-3.5 h-3.5 text-indigo-400" />
                         {new Date(maint.next_maintenance_date).toLocaleDateString()}
                       </div>
                     </div>
                     <div>
-                      <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Interval</span>
+                      <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Khoảng cách</span>
                       <div className="flex items-center gap-1.5 text-slate-300">
-                        {maint.interval_days} Days
+                        {maint.interval_days} Ngày
                       </div>
                     </div>
                   </div>
@@ -164,7 +164,7 @@ export function MaintenanceCenter() {
                       {maint.status}
                     </span>
                     <button className="text-[11px] font-medium text-slate-400 hover:text-white transition">
-                      Edit details
+                      Chỉnh sửa chi tiết 
                     </button>
                   </div>
                 </div>
@@ -181,7 +181,7 @@ export function MaintenanceCenter() {
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                 <CalendarClock className="w-5 h-5 text-indigo-400" />
-                Schedule Maintenance
+                Lịch bảo trì 
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-200">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -194,36 +194,36 @@ export function MaintenanceCenter() {
               <form id="add-maintenance-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hostname *</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Máy chủ *</label>
                     <input required type="text" value={formData.hostname} onChange={e => setFormData({...formData, hostname: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="server-01" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Task Type *</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Giao việc *</label>
                     <input required type="text" value={formData.task_type} onChange={e => setFormData({...formData, task_type: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="OS Patching" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Assigned To</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Giao cho</label>
                     <input type="text" value={formData.assigned_to || ''} onChange={e => setFormData({...formData, assigned_to: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" placeholder="john.doe@example.com" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Next Maintenance Date *</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lần bảo trì tiếp theo *</label>
                     <input required type="date" value={formData.next_maintenance_date} onChange={e => setFormData({...formData, next_maintenance_date: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Interval (Days) *</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Khoảng cách bảo trì (Ngày) *</label>
                     <input required type="number" min="1" value={formData.interval_days} onChange={e => setFormData({...formData, interval_days: parseInt(e.target.value) || 30})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Trạng thái </label>
                     <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none">
-                      <option value="Scheduled">Scheduled</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
+                      <option value="Scheduled">Đã lên lịch</option>
+                      <option value="In Progress">Đang trong quá trình</option>
+                      <option value="Completed">Đã hoàn thành</option>
+                      <option value="Cancelled">Đã hủy</option>
                     </select>
                   </div>
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Notes</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ghi chú</label>
                     <textarea value={formData.notes || ''} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:border-indigo-500 focus:outline-none" rows={3} placeholder="Requirements or details..." />
                   </div>
                 </div>
@@ -236,7 +236,7 @@ export function MaintenanceCenter() {
                 onClick={handleCloseModal}
                 className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition"
               >
-                Cancel
+                Hủy
               </button>
               <button 
                 type="submit"
