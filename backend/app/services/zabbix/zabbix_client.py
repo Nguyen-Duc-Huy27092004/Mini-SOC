@@ -252,7 +252,7 @@ class ZabbixClient:
         host_ids: List[str],
         *,
         key_search: Optional[str] = None,
-        limit: int = 500,
+        limit: int = 10000,
     ) -> List[Dict[str, Any]]:
         """Retrieve items (metrics) for given hosts."""
         params: Dict[str, Any] = {
@@ -260,7 +260,6 @@ class ZabbixClient:
                        "units", "value_type", "lastclock", "status"],
             "hostids": host_ids,
             "limit": limit,
-            "filter": {"status": "0"}  # Zabbix 7.0+ compatibility (replaces monitored)
         }
         if key_search:
             params["search"] = {"key_": key_search}
@@ -296,7 +295,7 @@ class ZabbixClient:
         self,
         *,
         min_severity: int = 0,
-        limit: int = 200,
+        limit: int = 2000,
     ) -> List[Dict[str, Any]]:
         """Retrieve active problems."""
         params = {

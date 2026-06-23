@@ -139,7 +139,7 @@ class ZabbixService:
         try:
             import asyncio
             raw_hosts, raw_problems, raw_triggers = await asyncio.gather(
-                client.host_get(),
+                client.host_get(monitored_hosts=0),
                 client.problem_get(),
                 client.trigger_get(only_true=False),
             )
@@ -152,7 +152,7 @@ class ZabbixService:
         raw_items = []
         if host_ids:
             try:
-                raw_items = await client.item_get(host_ids[:50])  # limit to 50 hosts max
+                raw_items = await client.item_get(host_ids, limit=10000)  # remove slice to get all items
             except Exception as exc:
                 logger.warning("zabbix_items_fetch_failed", error=str(exc))
 
