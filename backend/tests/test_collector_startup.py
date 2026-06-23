@@ -13,7 +13,8 @@ def test_get_collector_singleton():
 async def test_start_collector_no_file(monkeypatch):
     from app.core import config
 
-    monkeypatch.setattr(config.settings, "WAZUH_ALERTS_FILE", "")
+    new_settings = config.settings.model_copy(update={"WAZUH_ALERTS_FILE": ""})
+    monkeypatch.setattr("app.collector.service.settings", new_settings)
     task = __import__("asyncio").create_task(start_collector())
     await __import__("asyncio").sleep(0.2)
     task.cancel()
