@@ -19,7 +19,7 @@ export function InfrastructureDashboard() {
       try {
         const [ovData, topData, probData, hostsData] = await Promise.all([
           getOverview(),
-          getTopServers(100),
+          getTopServers(50),
           getProblems(),
           getHosts()
         ]);
