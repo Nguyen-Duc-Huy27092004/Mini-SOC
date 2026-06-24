@@ -3,7 +3,7 @@ import {
   Server, Activity, Plus, Search, 
   MapPin, ShieldCheck, CalendarClock
 } from 'lucide-react';
-import { getAssets, createAsset } from '../api';
+import { getAssets, createAsset, updateAsset, deleteAsset } from '../api';
 import type { ZabbixAssetOut, ZabbixAssetCreate } from '../types';
 
 export function AssetManagement() {
@@ -12,6 +12,7 @@ export function AssetManagement() {
   const [search, setSearch] = useState('');
   
   // Modal state
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<ZabbixAssetCreate>({
@@ -27,6 +28,7 @@ export function AssetManagement() {
   });
 
   const handleOpenModal = () => {
+    setEditingId(null);
     setFormData({
       hostname: '',
       ip_address: '',
@@ -43,16 +45,47 @@ export function AssetManagement() {
 
   const handleCloseModal = () => setIsModalOpen(false);
 
+  const handleEdit = (asset: ZabbixAssetOut) => {
+    setEditingId(asset.id);
+    setFormData({
+      hostname: asset.hostname,
+      ip_address: asset.ip_address || '',
+      location: asset.location || '',
+      department: asset.department || '',
+      vendor: asset.vendor || '',
+      model: asset.model || '',
+      serial_number: asset.serial_number || '',
+      lifecycle_status: asset.lifecycle_status || 'Active',
+      notes: asset.notes || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa tài sản này?')) return;
+    try {
+      await deleteAsset(id);
+      await fetchAssets();
+    } catch (error) {
+      console.error('Failed to delete asset:', error);
+      alert('Không thể xóa tài sản.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      await createAsset(formData);
+      if (editingId) {
+        await updateAsset(editingId, formData);
+      } else {
+        await createAsset(formData);
+      }
       await fetchAssets();
       handleCloseModal();
     } catch (error) {
-      console.error('Failed to create asset:', error);
-      alert('Failed to create asset. Please check the console for details.');
+      console.error('Failed to save asset:', error);
+      alert('Failed to save asset. Please check the console for details.');
     } finally {
       setIsSubmitting(false);
     }
@@ -204,9 +237,9 @@ export function AssetManagement() {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition">Chỉnh sửa</button>
+                        <button onClick={() => handleEdit(asset)} className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition">Chỉnh sửa</button>
                         <span className="text-slate-700 mx-2">|</span>
-                        <button className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition">Xóa</button>
+                        <button onClick={() => handleDelete(asset.id)} className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition">Xóa</button>
                       </td>
                     </tr>
                   ))
@@ -224,7 +257,7 @@ export function AssetManagement() {
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                 <Server className="w-5 h-5 text-indigo-400" />
-                Thêm tài sản CNTT
+                {editingId ? 'Cập nhật tài sản' : 'Thêm tài sản CNTT'}
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-200">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -295,7 +328,7 @@ export function AssetManagement() {
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? 'Đang lưu...' : 'Lưu tài sản'}
+                {isSubmitting ? 'Đang lưu...' : (editingId ? 'Cập nhật' : 'Lưu tài sản')}
               </button>
             </div>
           </div>

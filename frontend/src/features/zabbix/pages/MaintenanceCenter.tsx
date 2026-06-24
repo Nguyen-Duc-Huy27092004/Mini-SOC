@@ -3,7 +3,7 @@ import {
   CalendarClock, Wrench, CheckCircle, Clock, 
   AlertTriangle, Plus, Server
 } from 'lucide-react';
-import { getMaintenance, createMaintenance } from '../api';
+import { getMaintenance, createMaintenance, updateMaintenance, deleteMaintenance } from '../api';
 import type { ZabbixMaintenanceOut, ZabbixMaintenanceCreate } from '../types';
 
 export function MaintenanceCenter() {
@@ -11,6 +11,7 @@ export function MaintenanceCenter() {
   const [loading, setLoading] = useState(true);
 
   // Modal state
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<ZabbixMaintenanceCreate>({
@@ -24,6 +25,7 @@ export function MaintenanceCenter() {
   });
 
   const handleOpenModal = () => {
+    setEditingId(null);
     setFormData({
       hostname: '',
       task_type: '',
@@ -38,16 +40,45 @@ export function MaintenanceCenter() {
 
   const handleCloseModal = () => setIsModalOpen(false);
 
+  const handleEdit = (maint: ZabbixMaintenanceOut) => {
+    setEditingId(maint.id);
+    setFormData({
+      hostname: maint.hostname,
+      task_type: maint.task_type,
+      next_maintenance_date: maint.next_maintenance_date ? new Date(maint.next_maintenance_date).toISOString().split('T')[0] : '',
+      interval_days: maint.interval_days,
+      status: maint.status,
+      assigned_to: maint.assigned_to || '',
+      notes: maint.notes || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa lịch bảo trì này?')) return;
+    try {
+      await deleteMaintenance(id);
+      await fetchMaintenance();
+    } catch (error) {
+      console.error('Failed to delete maintenance:', error);
+      alert('Không thể xóa lịch bảo trì.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      await createMaintenance(formData);
+      if (editingId) {
+        await updateMaintenance(editingId, formData);
+      } else {
+        await createMaintenance(formData);
+      }
       await fetchMaintenance();
       handleCloseModal();
     } catch (error) {
-      console.error('Failed to create maintenance:', error);
-      alert('Failed to schedule maintenance. Please check the console for details.');
+      console.error('Failed to save maintenance:', error);
+      alert('Failed to save maintenance. Please check the console for details.');
     } finally {
       setIsSubmitting(false);
     }
@@ -163,9 +194,15 @@ export function MaintenanceCenter() {
                     }`}>
                       {maint.status}
                     </span>
-                    <button className="text-[11px] font-medium text-slate-400 hover:text-white transition">
-                      Chỉnh sửa chi tiết 
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEdit(maint)} className="text-[11px] font-medium text-slate-400 hover:text-white transition">
+                        Chỉnh sửa chi tiết 
+                      </button>
+                      <span className="text-slate-700">|</span>
+                      <button onClick={() => handleDelete(maint.id)} className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition">
+                        Xóa
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -181,7 +218,7 @@ export function MaintenanceCenter() {
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                 <CalendarClock className="w-5 h-5 text-indigo-400" />
-                Lịch bảo trì 
+                {editingId ? 'Cập nhật lịch bảo trì' : 'Lịch bảo trì'}
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-200">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -244,7 +281,7 @@ export function MaintenanceCenter() {
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? 'Đang lưu...' : 'Lưu lịch'}
+                {isSubmitting ? 'Đang lưu...' : (editingId ? 'Cập nhật' : 'Lưu lịch')}
               </button>
             </div>
           </div>
