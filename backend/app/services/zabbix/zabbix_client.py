@@ -220,8 +220,15 @@ class ZabbixClient:
     ) -> List[Dict[str, Any]]:
         """Retrieve all monitored hosts."""
         params: Dict[str, Any] = {
-            "output": output or ["hostid", "host", "name", "status", "available",
-                                 "error", "description", "ipmi_available"],
+            "output": output or [
+                "hostid", "host", "name", "status",
+                # All interface availability fields — needed for composite status
+                "available",       # Zabbix Agent (type 1)
+                "snmp_available",  # SNMP (type 2)
+                "ipmi_available",  # IPMI (type 3)
+                "jmx_available",   # JMX (type 4)
+                "error", "description",
+            ],
             "selectGroups": selectGroups,
             "selectInterfaces": selectInterfaces,
         }

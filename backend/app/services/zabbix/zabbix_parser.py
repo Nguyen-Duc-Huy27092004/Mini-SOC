@@ -46,6 +46,15 @@ AVAILABILITY_MAP: Dict[int, str] = {
     2: "Unavailable",
 }
 
+# Interface type codes returned by Zabbix API
+# type 1 = Agent, type 2 = SNMP, type 3 = IPMI, type 4 = JMX
+_IFACE_AVAIL_FIELDS = [
+    "available",      # Zabbix Agent (type 1)
+    "snmp_available", # SNMP       (type 2)
+    "ipmi_available", # IPMI       (type 3)
+    "jmx_available",  # JMX        (type 4)
+]
+
 TRIGGER_VALUE_MAP: Dict[int, str] = {
     0: "OK",
     1: "Problem",
@@ -94,8 +103,22 @@ def _unix_to_iso(value: Any) -> Optional[str]:
 
 def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize a single host record from host.get."""
-    avail_int = _safe_int(raw.get("available"), 0)
     status_int = _safe_int(raw.get("status"), 0)
+
+    # Compute composite availability across ALL interface types.
+    # Zabbix tracks availability separately per interface protocol:
+    #   available      -> Zabbix Agent (type 1)
+    #   snmp_available -> SNMP         (type 2)
+    #   ipmi_available -> IPMI         (type 3)
+    #   jmx_available  -> JMX          (type 4)
+    #
+    # Resolution priority:  1 (Available) > 2 (Unavailable) > 0 (Unknown)
+    # A host is Available if at least ONE active interface is reachable.
+    avail_values = [
+        _safe_int(raw.get(field), 0)
+        for field in _IFACE_AVAIL_FIELDS
+    ]
+    avail_int = _resolve_composite_availability(avail_values)
 
     # Extract primary interface IP
     ip_address: Optional[str] = None
@@ -287,6 +310,32 @@ def parse_history(raw_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # =========================================================================
 # Internal helpers
 # =========================================================================
+
+def _resolve_composite_availability(values: List[int]) -> int:
+    """
+    Compute aggregate availability code from multiple interface fields.
+
+    Zabbix stores availability per interface type independently (agent,
+    SNMP, IPMI, JMX). A host may be monitored by any combination of these.
+    Values:
+        0 = Unknown  (interface not configured or never polled)
+        1 = Available
+        2 = Unavailable
+
+    Resolution logic:
+        - If ANY interface reports 1 (Available)  → 1  (host is reachable)
+        - Else if ANY reports 2 (Unavailable)     → 2  (host is down)
+        - Otherwise all are 0                     → 0  (no active interfaces)
+    """
+    # Filter out interfaces that are not configured (value == 0 means
+    # "not applicable" when the interface type is not in use).
+    active = [v for v in values if v in (1, 2)]
+    if not active:
+        return 0   # all Unknown — no active interface configured
+    if 1 in active:
+        return 1   # at least one interface is up
+    return 2       # all active interfaces are down
+
 
 def _safe_int(value: Any, default: int = 0) -> int:
     try:

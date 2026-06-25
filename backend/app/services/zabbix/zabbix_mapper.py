@@ -35,10 +35,15 @@ from app.services.zabbix.zabbix_parser import PRIORITY_MAP, PRIORITY_COLOR
 # =========================================================================
 
 def map_host_summary(hosts: List[Dict[str, Any]]) -> ZabbixHostSummary:
+    """Count hosts by composite availability (Agent + SNMP + IPMI + JMX)."""
     total = len(hosts)
-    available = sum(1 for h in hosts if h.get("available_code") == 1)
+    # available_code is now computed via _resolve_composite_availability:
+    #   1 = Available (at least one active interface up)
+    #   2 = Unavailable (all active interfaces down)
+    #   0 = Unknown (no active interfaces configured / never polled)
+    available   = sum(1 for h in hosts if h.get("available_code") == 1)
     unavailable = sum(1 for h in hosts if h.get("available_code") == 2)
-    unknown = sum(1 for h in hosts if h.get("available_code") == 0)
+    unknown     = sum(1 for h in hosts if h.get("available_code") == 0)
     return ZabbixHostSummary(
         total=total,
         available=available,

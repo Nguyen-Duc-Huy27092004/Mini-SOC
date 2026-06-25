@@ -301,8 +301,13 @@ class ZabbixClientV7:
         """
         params: Dict[str, Any] = {
             "output": output or [
-                "hostid", "host", "name", "status", "available",
-                "description", "maintenance_status", "ipmi_available",
+                "hostid", "host", "name", "status",
+                # All interface availability fields — needed for composite status
+                "available",       # Zabbix Agent (type 1)
+                "snmp_available",  # SNMP         (type 2)
+                "ipmi_available",  # IPMI         (type 3)
+                "jmx_available",   # JMX          (type 4)
+                "description", "maintenance_status",
                 "error", "items_num", "maintenance_from", "maintenance_type",
             ],
         }

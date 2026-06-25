@@ -36,6 +36,15 @@ HOST_AVAILABILITY = {
     2: "unavailable",
 }
 
+# Interface availability field names for composite resolution
+# (Zabbix stores each protocol's reachability independently)
+_IFACE_AVAIL_FIELDS = [
+    "available",      # Zabbix Agent (type 1)
+    "snmp_available", # SNMP         (type 2)
+    "ipmi_available", # IPMI         (type 3)
+    "jmx_available",  # JMX          (type 4)
+]
+
 # IPMI availability
 IPMI_AVAILABILITY = {
     0: "unknown",
@@ -277,8 +286,11 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
         parsed["status_code"] = status_raw
         parsed["monitored"] = status_raw == 0
         
-        # Availability
-        available_raw = int(host.get("available", 0))
+        # Availability — composite across all interface types.
+        # Zabbix tracks Agent / SNMP / IPMI / JMX reachability independently.
+        # Resolution: Available > Unavailable > Unknown
+        avail_values = [int(host.get(f, 0)) for f in _IFACE_AVAIL_FIELDS]
+        available_raw = _resolve_composite_availability(avail_values)
         parsed["availability"] = HOST_AVAILABILITY.get(available_raw, "unknown")
         parsed["availability_code"] = available_raw
         parsed["is_available"] = available_raw == 1
@@ -733,4 +745,36 @@ def parse_maintenance_list(maintenances: List[Dict[str, Any]]) -> List[Dict[str,
         if parsed_maint:
             parsed.append(parsed_maint)
     return parsed
+
+
+# ================================================================
+# Composite Availability Helper
+# ================================================================
+
+def _resolve_composite_availability(values: List[int]) -> int:
+    """
+    Compute aggregate availability from multiple Zabbix interface fields.
+
+    Zabbix stores reachability separately per interface protocol:
+        available      -> Agent (type 1)
+        snmp_available -> SNMP  (type 2)
+        ipmi_available -> IPMI  (type 3)
+        jmx_available  -> JMX   (type 4)
+
+    Each field encodes:
+        0 = Unknown  (interface not configured or never checked)
+        1 = Available
+        2 = Unavailable
+
+    Resolution priority (matches Zabbix web UI logic):
+        ANY interface == 1  ->  1  (Available  — host is reachable)
+        ALL active   == 2   ->  2  (Unavailable — host is down)
+        All          == 0   ->  0  (Unknown     — no active interfaces)
+    """
+    active = [v for v in values if v in (1, 2)]
+    if not active:
+        return 0   # no interface configured / never polled
+    if 1 in active:
+        return 1   # at least one interface is up
+    return 2       # all active interfaces are down
 
