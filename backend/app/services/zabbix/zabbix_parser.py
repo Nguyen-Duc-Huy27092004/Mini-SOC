@@ -114,17 +114,27 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
     #
     # Resolution priority:  1 (Available) > 2 (Unavailable) > 0 (Unknown)
     # A host is Available if at least ONE active interface is reachable.
+    
+    # Zabbix < 6.4: fields are on the host object directly
     avail_values = [
         _safe_int(raw.get(field), 0)
         for field in _IFACE_AVAIL_FIELDS
     ]
-    avail_int = _resolve_composite_availability(avail_values)
 
-    # Extract primary interface IP
-    ip_address: Optional[str] = None
+    # Extract interfaces
     interfaces = raw.get("interfaces") or []
-    if isinstance(interfaces, list) and interfaces:
-        ip_address = interfaces[0].get("ip")
+    ip_address: Optional[str] = None
+    
+    if isinstance(interfaces, list):
+        if interfaces:
+            ip_address = interfaces[0].get("ip")
+            
+        # Zabbix >= 6.4: fields moved into the interface object
+        for iface in interfaces:
+            if isinstance(iface, dict) and "available" in iface:
+                avail_values.append(_safe_int(iface.get("available"), 0))
+
+    avail_int = _resolve_composite_availability(avail_values)
 
     # Extract group names
     groups = raw.get("groups") or raw.get("hostGroups") or []
