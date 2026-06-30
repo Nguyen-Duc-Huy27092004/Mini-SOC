@@ -124,6 +124,7 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
     # Extract interfaces
     interfaces = raw.get("interfaces") or []
     ip_address: Optional[str] = None
+    agent_types: set[str] = set()
     
     if isinstance(interfaces, list):
         if interfaces:
@@ -131,14 +132,33 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
             
         # Zabbix >= 6.4: fields moved into the interface object
         for iface in interfaces:
-            if isinstance(iface, dict) and "available" in iface:
-                avail_values.append(_safe_int(iface.get("available"), 0))
+            if isinstance(iface, dict):
+                if "available" in iface:
+                    avail_values.append(_safe_int(iface.get("available"), 0))
+                
+                # Extract agent type from interface
+                itype = _safe_int(iface.get("type"), 1)
+                if itype == 1:
+                    agent_types.add("Zabbix Agent")
+                elif itype == 2:
+                    agent_types.add("SNMP")
+                elif itype == 3:
+                    agent_types.add("IPMI")
+                elif itype == 4:
+                    agent_types.add("JMX")
 
     avail_int = _resolve_composite_availability(avail_values)
 
     # Extract group names
     groups = raw.get("groups") or raw.get("hostGroups") or []
     group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
+
+    # If no interfaces but host is monitored, it's likely an HTTP Agent or simple checks host
+    if not agent_types and status_int == 0:
+        agent_types.add("HTTP Agent / Simple")
+        # Treat as available if there's no error
+        if avail_int == 0 and not raw.get("error"):
+            avail_int = 1
 
     return {
         "host_id": raw.get("hostid", ""),
@@ -151,6 +171,7 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
         "available_code": avail_int,
         "ip_address": ip_address,
         "groups": group_names,
+        "agent_types": list(agent_types),
         "error": raw.get("error") or None,
     }
 

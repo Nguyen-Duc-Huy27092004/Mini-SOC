@@ -34,6 +34,7 @@ class ZabbixHostOut(BaseModel):
     available_label: str
     ip_address: Optional[str] = None
     groups: List[str] = Field(default_factory=list)
+    agent_types: List[str] = Field(default_factory=list)
     problem_count: int = 0
     max_severity: int = 0
     max_severity_label: str = "Not classified"

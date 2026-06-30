@@ -332,6 +332,7 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
             ]
         
         # Interfaces
+        agent_types: set[str] = set()
         if "interfaces" in host and isinstance(host["interfaces"], list):
             parsed["interfaces"] = [
                 {
@@ -344,6 +345,26 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
                 }
                 for iface in host["interfaces"]
             ]
+            
+            for iface in parsed["interfaces"]:
+                itype = iface["type"]
+                if itype == 1:
+                    agent_types.add("Zabbix Agent")
+                elif itype == 2:
+                    agent_types.add("SNMP")
+                elif itype == 3:
+                    agent_types.add("IPMI")
+                elif itype == 4:
+                    agent_types.add("JMX")
+                    
+        if not agent_types and status_raw == 0:
+            agent_types.add("HTTP Agent / Simple")
+            if available_raw == 0 and not parsed.get("error"):
+                parsed["availability"] = HOST_AVAILABILITY.get(1, "unknown")
+                parsed["availability_code"] = 1
+                parsed["is_available"] = True
+                
+        parsed["agent_types"] = list(agent_types)
         
         # Remove None values
         return {k: v for k, v in parsed.items() if v is not None and v != ""}

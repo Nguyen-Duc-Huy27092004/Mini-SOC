@@ -81,6 +81,7 @@ def map_hosts(hosts: List[Dict[str, Any]], problems: List[Dict[str, Any]]) -> Li
             available_label=h["available_label"],
             ip_address=h.get("ip_address"),
             groups=h.get("groups", []),
+            agent_types=h.get("agent_types", []),
             problem_count=problem_count,
             max_severity=max_sev,
             max_severity_label=PRIORITY_MAP.get(max_sev, "Not classified"),
