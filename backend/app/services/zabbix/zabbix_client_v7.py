@@ -285,8 +285,8 @@ class ZabbixClientV7:
         self,
         *,
         output: Optional[List[str]] = None,
-        selectGroups: Optional[str] = None,
-        selectInterfaces: Optional[str] = None,
+        selectGroups: Optional[str] = "extend",
+        selectInterfaces: Optional[str] = "extend",
         selectItems: Optional[str] = None,
         selectTriggers: Optional[str] = None,
         monitored_hosts: Optional[int] = None,
@@ -297,12 +297,14 @@ class ZabbixClientV7:
         """
         Retrieve hosts from Zabbix.
         
-        Returns list of hosts with full details for infrastructure overview.
+        Always fetches selectInterfaces and selectGroups so the parser can
+        correctly classify Zabbix Agent, SNMP, HTTP Agent hosts etc.
+        Only returns monitored hosts (status=0) by default.
         """
         params: Dict[str, Any] = {
             "output": output or [
                 "hostid", "host", "name", "status",
-                # All interface availability fields — needed for composite status
+                # Top-level availability fields (all Zabbix versions)
                 "available",       # Zabbix Agent (type 1)
                 "snmp_available",  # SNMP         (type 2)
                 "ipmi_available",  # IPMI         (type 3)
@@ -310,12 +312,14 @@ class ZabbixClientV7:
                 "description", "maintenance_status",
                 "error", "items_num", "maintenance_from", "maintenance_type",
             ],
+            # Always fetch interfaces (needed to detect agent type + IP address)
+            "selectInterfaces": selectInterfaces,
+            # Always fetch groups (needed for display)
+            "selectGroups": selectGroups,
+            # Only monitored hosts by default
+            "filter": filter or {"status": "0"},
         }
         
-        if selectGroups is not None:
-            params["selectGroups"] = selectGroups
-        if selectInterfaces is not None:
-            params["selectInterfaces"] = selectInterfaces
         if selectItems is not None:
             params["selectItems"] = selectItems
         if selectTriggers is not None:
@@ -324,8 +328,6 @@ class ZabbixClientV7:
             params["monitored_hosts"] = monitored_hosts
         if search:
             params["search"] = search
-        if filter:
-            params["filter"] = filter
         if limit:
             params["limit"] = limit
 

@@ -218,23 +218,24 @@ class ZabbixClient:
         selectItems: str = None,
         monitored_hosts: int = 1,
     ) -> List[Dict[str, Any]]:
-        """Retrieve all monitored hosts."""
+        """Retrieve all monitored hosts with full interface + group data."""
         params: Dict[str, Any] = {
             "output": output or [
                 "hostid", "host", "name", "status",
-                # All interface availability fields — needed for composite status
+                # Top-level availability fields (Zabbix < 6.4 style, kept for compat)
                 "available",       # Zabbix Agent (type 1)
                 "snmp_available",  # SNMP (type 2)
                 "ipmi_available",  # IPMI (type 3)
                 "jmx_available",   # JMX (type 4)
                 "error", "description",
             ],
-            "selectGroups": selectGroups,
+            # Always request interfaces so we can detect Zabbix Agent / SNMP / HTTP Agent
             "selectInterfaces": selectInterfaces,
+            # Always request groups for display
+            "selectGroups": selectGroups,
+            # Only fetch monitored hosts (status=0 means monitored in Zabbix)
+            "filter": {"status": "0"},
         }
-        # Zabbix 7.0+ compatibility: monitored_hosts is deprecated, use filter
-        if monitored_hosts:
-            params["filter"] = {"status": "0"}
 
         if selectItems:
             params["selectItems"] = selectItems
@@ -263,9 +264,13 @@ class ZabbixClient:
     ) -> List[Dict[str, Any]]:
         """Retrieve items (metrics) for given hosts."""
         params: Dict[str, Any] = {
-            "output": ["itemid", "hostid", "name", "key_", "lastvalue",
-                       "units", "value_type", "lastclock", "status"],
+            "output": [
+                "itemid", "hostid", "name", "key_", "lastvalue",
+                "units", "value_type", "lastclock", "status",
+                "type",   # item type: 0=zabbix_agent, 19=http_agent, etc.
+            ],
             "hostids": host_ids,
+            "filter": {"status": "0"},  # only enabled items
             "limit": limit,
         }
         if key_search:

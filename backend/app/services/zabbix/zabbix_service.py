@@ -135,11 +135,17 @@ class ZabbixService:
 
         client = self._get_client()
 
-        # Check connectivity first
+        # Fetch hosts + problems + triggers in parallel.
+        # host_get: always pass selectInterfaces + selectGroups so parser can
+        #   detect Zabbix Agent (type=1), SNMP (type=2), HTTP Agent hosts, etc.
+        #   monitored_hosts is ignored — filter is hardcoded inside host_get.
         try:
             import asyncio
             raw_hosts, raw_problems, raw_triggers = await asyncio.gather(
-                client.host_get(monitored_hosts=0),
+                client.host_get(
+                    selectInterfaces="extend",
+                    selectGroups="extend",
+                ),
                 client.problem_get(),
                 client.trigger_get(only_true=False),
             )
@@ -147,12 +153,17 @@ class ZabbixService:
             logger.error("zabbix_fetch_all_failed", error=str(exc))
             return {}
 
-        # Fetch items for resource usage (CPU/Mem/Disk keys only)
+        total_hosts = len(raw_hosts or [])
+        logger.info("zabbix_hosts_fetched_raw", count=total_hosts)
+
+        # Fetch items for resource usage (CPU/Mem/Disk keys only).
+        # item_get expects host_ids as a positional arg (ZabbixClient v1 style).
         host_ids = [h.get("hostid", "") for h in (raw_hosts or []) if h.get("hostid")]
         raw_items = []
         if host_ids:
             try:
-                raw_items = await client.item_get(host_ids, limit=10000)  # remove slice to get all items
+                raw_items = await client.item_get(host_ids, limit=10000)
+                logger.info("zabbix_items_fetched_raw", count=len(raw_items))
             except Exception as exc:
                 logger.warning("zabbix_items_fetch_failed", error=str(exc))
 
@@ -162,8 +173,16 @@ class ZabbixService:
             "triggers": parse_triggers(raw_triggers or []),
             "items": parse_items(raw_items or []),
         }
+        logger.info(
+            "zabbix_fetch_all_done",
+            hosts=len(data["hosts"]),
+            problems=len(data["problems"]),
+            triggers=len(data["triggers"]),
+            items=len(data["items"]),
+        )
         self._cache_set("_all", data)
         return data
+
 
     # ------------------------------------------------------------------
     # Public API — Original endpoints (untouched)

@@ -102,63 +102,84 @@ def _unix_to_iso(value: Any) -> Optional[str]:
 # =========================================================================
 
 def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize a single host record from host.get."""
+    """Normalize a single host record from host.get.
+    
+    Agent type detection strategy:
+      1. If interfaces list is present → read interface.type to classify agent
+      2. Fallback (Zabbix < 6.4 or no interfaces): use top-level
+         available / snmp_available / ipmi_available / jmx_available fields
+      3. If still no type found but host is monitored → mark as HTTP Agent / Simple
+    """
     status_int = _safe_int(raw.get("status"), 0)
 
-    # Compute composite availability across ALL interface types.
-    # Zabbix tracks availability separately per interface protocol:
-    #   available      -> Zabbix Agent (type 1)
-    #   snmp_available -> SNMP         (type 2)
-    #   ipmi_available -> IPMI         (type 3)
-    #   jmx_available  -> JMX          (type 4)
-    #
-    # Resolution priority:  1 (Available) > 2 (Unavailable) > 0 (Unknown)
-    # A host is Available if at least ONE active interface is reachable.
-    
-    # Zabbix < 6.4: fields are on the host object directly
-    avail_values = [
-        _safe_int(raw.get(field), 0)
-        for field in _IFACE_AVAIL_FIELDS
-    ]
+    # Step 1: Collect top-level availability codes (Zabbix < 6.4 style).
+    # These fields are present in all Zabbix versions and give us a
+    # fallback availability status when interface-level data is absent.
+    top_level_avail = {
+        "agent":  _safe_int(raw.get("available"),      0),  # Zabbix Agent
+        "snmp":   _safe_int(raw.get("snmp_available"), 0),  # SNMP
+        "ipmi":   _safe_int(raw.get("ipmi_available"), 0),  # IPMI
+        "jmx":    _safe_int(raw.get("jmx_available"),  0),  # JMX
+    }
+    avail_values = list(top_level_avail.values())
+    agent_types: set[str] = set()
 
-    # Extract interfaces
+    # If top-level fields show a non-zero value, we know the agent type even
+    # without interface data.
+    if top_level_avail["agent"] != 0:
+        agent_types.add("Zabbix Agent")
+    if top_level_avail["snmp"] != 0:
+        agent_types.add("SNMP")
+    if top_level_avail["ipmi"] != 0:
+        agent_types.add("IPMI")
+    if top_level_avail["jmx"] != 0:
+        agent_types.add("JMX")
+
+    # Step 2: Process interfaces list (Zabbix >= 6.4 moves availability into
+    # each interface object; also gives us the interface type regardless of version).
     interfaces = raw.get("interfaces") or []
     ip_address: Optional[str] = None
-    agent_types: set[str] = set()
-    
-    if isinstance(interfaces, list):
-        if interfaces:
-            ip_address = interfaces[0].get("ip")
-            
-        # Zabbix >= 6.4: fields moved into the interface object
+
+    if isinstance(interfaces, list) and interfaces:
+        # Pick the primary interface IP (main=1 preferred, else first)
+        primary = next((i for i in interfaces if isinstance(i, dict) and i.get("main") in ("1", 1, True)), interfaces[0])
+        ip_address = primary.get("ip") or primary.get("dns") or None
+
         for iface in interfaces:
-            if isinstance(iface, dict):
-                if "available" in iface:
-                    avail_values.append(_safe_int(iface.get("available"), 0))
-                
-                # Extract agent type from interface
-                itype = _safe_int(iface.get("type"), 1)
-                if itype == 1:
-                    agent_types.add("Zabbix Agent")
-                elif itype == 2:
-                    agent_types.add("SNMP")
-                elif itype == 3:
-                    agent_types.add("IPMI")
-                elif itype == 4:
-                    agent_types.add("JMX")
+            if not isinstance(iface, dict):
+                continue
+
+            # Interface-level availability (Zabbix >= 6.4)
+            if "available" in iface:
+                avail_values.append(_safe_int(iface.get("available"), 0))
+
+            # Interface type → agent type label
+            itype = _safe_int(iface.get("type"), 0)
+            if itype == 1:
+                agent_types.add("Zabbix Agent")
+            elif itype == 2:
+                agent_types.add("SNMP")
+            elif itype == 3:
+                agent_types.add("IPMI")
+            elif itype == 4:
+                agent_types.add("JMX")
 
     avail_int = _resolve_composite_availability(avail_values)
+
+    # Step 3: If we still have no agent type but the host is being monitored
+    # (status=0), it uses HTTP Agent, Zabbix Trapper, or internal checks —
+    # none of which require an interface. Mark it accordingly.
+    if not agent_types and status_int == 0:
+        agent_types.add("HTTP Agent")
+        # HTTP Agent hosts report availability via items, not interfaces.
+        # If all avail values are 0 (Unknown) and there's no error, treat as Available
+        # so these hosts don't get incorrectly counted as "Unknown".
+        if avail_int == 0 and not raw.get("error"):
+            avail_int = 1
 
     # Extract group names
     groups = raw.get("groups") or raw.get("hostGroups") or []
     group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
-
-    # If no interfaces but host is monitored, it's likely an HTTP Agent or simple checks host
-    if not agent_types and status_int == 0:
-        agent_types.add("HTTP Agent / Simple")
-        # Treat as available if there's no error
-        if avail_int == 0 and not raw.get("error"):
-            avail_int = 1
 
     return {
         "host_id": raw.get("hostid", ""),
@@ -171,7 +192,7 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
         "available_code": avail_int,
         "ip_address": ip_address,
         "groups": group_names,
-        "agent_types": list(agent_types),
+        "agent_types": sorted(agent_types),  # sorted for consistent output
         "error": raw.get("error") or None,
     }
 

@@ -270,6 +270,11 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
     Parse and clean host data.
     
     Removes null values, converts timestamps, and adds human-readable fields.
+
+    Agent type detection strategy (same as zabbix_parser.py):
+      1. Read top-level available/snmp_available/ipmi_available/jmx_available
+      2. Then read interface.type from selectInterfaces list
+      3. Fallback: host has no interface → HTTP Agent / internal checks
     """
     try:
         # Basic info
@@ -285,19 +290,28 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
         parsed["status"] = HOST_STATUS.get(status_raw, "unknown")
         parsed["status_code"] = status_raw
         parsed["monitored"] = status_raw == 0
-        
-        # Availability — composite across all interface types.
-        # Zabbix tracks Agent / SNMP / IPMI / JMX reachability independently.
-        # Resolution: Available > Unavailable > Unknown
-        avail_values = [int(host.get(f, 0)) for f in _IFACE_AVAIL_FIELDS]
+
+        # ── Step 1: top-level availability fields (all Zabbix versions) ──────
+        top_level_avail = {
+            "agent": int(host.get("available", 0)),
+            "snmp":  int(host.get("snmp_available", 0)),
+            "ipmi":  int(host.get("ipmi_available", 0)),
+            "jmx":   int(host.get("jmx_available", 0)),
+        }
+        avail_values = list(top_level_avail.values())
+        agent_types: set[str] = set()
+
+        if top_level_avail["agent"] != 0:
+            agent_types.add("Zabbix Agent")
+        if top_level_avail["snmp"] != 0:
+            agent_types.add("SNMP")
+        if top_level_avail["ipmi"] != 0:
+            agent_types.add("IPMI")
+        if top_level_avail["jmx"] != 0:
+            agent_types.add("JMX")
+
+        # Compute preliminary availability
         available_raw = _resolve_composite_availability(avail_values)
-        parsed["availability"] = HOST_AVAILABILITY.get(available_raw, "unknown")
-        parsed["availability_code"] = available_raw
-        parsed["is_available"] = available_raw == 1
-        
-        # IPMI availability
-        ipmi_raw = int(host.get("ipmi_available", 0))
-        parsed["ipmi_availability"] = IPMI_AVAILABILITY.get(ipmi_raw, "unknown")
         
         # Maintenance
         maintenance_raw = int(host.get("maintenance_status", 0))
@@ -331,23 +345,26 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
                 for g in host["groups"]
             ]
         
-        # Interfaces
-        agent_types: set[str] = set()
-        if "interfaces" in host and isinstance(host["interfaces"], list):
-            parsed["interfaces"] = [
-                {
+        # ── Step 2: Interfaces (Zabbix >= 6.4 moves avail into interfaces) ──
+        if "interfaces" in host and isinstance(host["interfaces"], list) and host["interfaces"]:
+            iface_list = host["interfaces"]
+            parsed["interfaces"] = []
+            for iface in iface_list:
+                if not isinstance(iface, dict):
+                    continue
+                itype = int(iface.get("type", 1))
+                parsed["interfaces"].append({
                     "interfaceid": iface.get("interfaceid", ""),
                     "ip": iface.get("ip", ""),
                     "dns": iface.get("dns", ""),
                     "port": iface.get("port", ""),
-                    "type": int(iface.get("type", 1)),
+                    "type": itype,
                     "main": bool(int(iface.get("main", 0))),
-                }
-                for iface in host["interfaces"]
-            ]
-            
-            for iface in parsed["interfaces"]:
-                itype = iface["type"]
+                })
+                # Interface-level availability (Zabbix >= 6.4)
+                if "available" in iface:
+                    avail_values.append(int(iface.get("available", 0)))
+                # Classify agent type from interface type
                 if itype == 1:
                     agent_types.add("Zabbix Agent")
                 elif itype == 2:
@@ -356,15 +373,26 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
                     agent_types.add("IPMI")
                 elif itype == 4:
                     agent_types.add("JMX")
-                    
+
+            # Recompute availability now that interface-level values are added
+            available_raw = _resolve_composite_availability(avail_values)
+
+        # ── Step 3: Fallback — no interface = HTTP Agent / internal ──────────
         if not agent_types and status_raw == 0:
-            agent_types.add("HTTP Agent / Simple")
+            agent_types.add("HTTP Agent")
+            # HTTP Agent availability is determined by items, not interfaces.
+            # If all values are Unknown (0) and no error, assume Available.
             if available_raw == 0 and not parsed.get("error"):
-                parsed["availability"] = HOST_AVAILABILITY.get(1, "unknown")
-                parsed["availability_code"] = 1
-                parsed["is_available"] = True
-                
-        parsed["agent_types"] = list(agent_types)
+                available_raw = 1
+
+        parsed["availability"] = HOST_AVAILABILITY.get(available_raw, "unknown")
+        parsed["availability_code"] = available_raw
+        parsed["is_available"] = available_raw == 1
+        parsed["agent_types"] = sorted(agent_types)
+
+        # IPMI availability (kept for backward compat)
+        ipmi_raw = int(host.get("ipmi_available", 0))
+        parsed["ipmi_availability"] = IPMI_AVAILABILITY.get(ipmi_raw, "unknown")
         
         # Remove None values
         return {k: v for k, v in parsed.items() if v is not None and v != ""}
