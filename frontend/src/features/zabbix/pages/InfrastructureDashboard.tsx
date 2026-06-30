@@ -48,6 +48,8 @@ function agentTypeIcon(type: string) {
     case 'Zabbix Agent': return <Cpu className={cls} />;
     case 'HTTP Agent':   return <Globe className={cls} />;
     case 'SNMP':         return <Radio className={cls} />;
+    case 'IPMI':         return <Zap className={cls} />;
+    case 'JMX':          return <Activity className={cls} />;
     default:             return null;
   }
 }
@@ -389,14 +391,28 @@ export function InfrastructureDashboard() {
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border ${
-                        host.available 
-                          ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                          : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
-                      }`}>
-                        {host.available ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        {host.available_label}
-                      </span>
+                      {(() => {
+                        const code = host.available_label?.toLowerCase();
+                        if (code === 'available') return (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Hoạt động
+                          </span>
+                        );
+                        if (code === 'unavailable') return (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border text-rose-400 bg-rose-500/10 border-rose-500/20">
+                            <XCircle className="w-3 h-3" />
+                            Không hoạt động
+                          </span>
+                        );
+                        // Unknown — could be HTTP Agent still resolving
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border text-amber-400 bg-amber-500/10 border-amber-500/20">
+                            <Clock className="w-3 h-3" />
+                            Không rõ
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-5 py-3 text-center">
                       <span className={`text-xs font-mono ${host.problem_count > 0 ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>

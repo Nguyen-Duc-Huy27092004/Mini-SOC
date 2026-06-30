@@ -72,6 +72,7 @@ from app.services.zabbix.zabbix_parser import (
     parse_items,
     parse_problems,
     parse_triggers,
+    resolve_http_agent_availability,
 )
 
 logger = structlog.get_logger()
@@ -175,11 +176,39 @@ class ZabbixService:
         if dropped > 0:
             logger.warning("zabbix_hosts_parse_dropped", dropped=dropped, total_raw=total_raw)
 
+        parsed_items = parse_items(raw_items or [])
+
+        # ── HTTP Agent / Active Agent availability fix ──────────────────────
+        # These hosts have no real Zabbix interface, so interface-based
+        # availability is always 0 (Unknown). We resolve it from item state.
+        no_iface_host_ids = {
+            h["host_id"]
+            for h in parsed_hosts
+            if h.get("available_code", 0) == 0  # still Unknown after interface parse
+            or "HTTP Agent" in h.get("agent_types", [])
+        }
+        if no_iface_host_ids:
+            http_avail = resolve_http_agent_availability(parsed_items, no_iface_host_ids)
+            for h in parsed_hosts:
+                hid = h["host_id"]
+                if hid in http_avail:
+                    code = http_avail[hid]
+                    h["available_code"]  = code
+                    h["available"]       = code == 1
+                    h["available_label"] = {0: "Unknown", 1: "Available", 2: "Unavailable"}.get(code, "Unknown")
+            logger.info(
+                "zabbix_http_agent_avail_resolved",
+                resolved=len(http_avail),
+                available=sum(1 for v in http_avail.values() if v == 1),
+                unavailable=sum(1 for v in http_avail.values() if v == 2),
+                unknown=sum(1 for v in http_avail.values() if v == 0),
+            )
+
         data = {
             "hosts":    parsed_hosts,
             "problems": parse_problems(raw_problems or []),
             "triggers": parse_triggers(raw_triggers or []),
-            "items":    parse_items(raw_items or []),
+            "items":    parsed_items,
         }
         logger.info(
             "zabbix_fetch_all_done",

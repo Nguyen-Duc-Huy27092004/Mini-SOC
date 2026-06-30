@@ -380,20 +380,69 @@ def parse_events(raw_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def parse_item(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize an item record from item.get."""
     return {
-        "item_id": raw.get("itemid", ""),
-        "host_id": raw.get("hostid", ""),
-        "name": raw.get("name", ""),
-        "key": raw.get("key_", ""),
-        "last_value": _safe_float(raw.get("lastvalue")),
-        "units": raw.get("units", ""),
-        "last_clock": _parse_unix(raw.get("lastclock")),
+        "item_id":       raw.get("itemid", ""),
+        "host_id":       raw.get("hostid", ""),
+        "name":          raw.get("name", ""),
+        "key":           raw.get("key_", ""),
+        "last_value":    _safe_float(raw.get("lastvalue")),
+        "units":         raw.get("units", ""),
+        "last_clock":    _parse_unix(raw.get("lastclock")),
         "last_clock_iso": _unix_to_iso(raw.get("lastclock")),
-        "status": "Enabled" if raw.get("status") == "0" else "Disabled",
+        "status":        "Enabled" if raw.get("status") == "0" else "Disabled",
+        # state: 0=normal (collecting), 1=not_supported (broken)
+        # This is the primary availability signal for HTTP Agent hosts
+        "state":         _safe_int(raw.get("state"), 0),
+        "state_label":   "normal" if _safe_int(raw.get("state"), 0) == 0 else "not_supported",
+        # item type: 0=zabbix_agent, 7=active_agent, 19=http_agent, etc.
+        "type":          _safe_int(raw.get("type"), 0),
+        "error":         raw.get("error") or None,
     }
 
 
 def parse_items(raw_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [parse_item(r) for r in (raw_list or [])]
+
+
+# =========================================================================
+# HTTP Agent / Active Agent Availability Resolution
+# =========================================================================
+
+# Item types that indicate HTTP Agent or Zabbix Active Agent monitoring
+_HTTP_AGENT_ITEM_TYPES  = {19}      # type 19 = http_agent
+_ACTIVE_AGENT_ITEM_TYPES = {7}      # type 7  = zabbix_agent_active
+
+
+def resolve_http_agent_availability(items: List[Dict[str, Any]], host_ids: set) -> Dict[str, int]:
+    """
+    For hosts that have no real interfaces (HTTP Agent, Active Agent),
+    infer availability from item state.
+
+    Logic:
+      - If ANY item for this host has state=0 (normal/collecting) → Available (1)
+      - If ALL items are state=1 (not_supported) → Unavailable (2)
+      - If NO items exist for this host → Unknown (0)
+
+    Returns: Dict[host_id → availability_code]
+    """
+    # Group items by host_id
+    host_item_states: Dict[str, List[int]] = {}
+    for item in items:
+        hid = item.get("host_id", "")
+        if hid not in host_ids:
+            continue
+        state = item.get("state", 0)  # 0=normal, 1=not_supported
+        host_item_states.setdefault(hid, []).append(state)
+
+    result: Dict[str, int] = {}
+    for hid in host_ids:
+        states = host_item_states.get(hid, [])
+        if not states:
+            result[hid] = 0  # Unknown — no items at all
+        elif 0 in states:
+            result[hid] = 1  # Available — at least one item is collecting
+        else:
+            result[hid] = 2  # Unavailable — all items are not_supported
+    return result
 
 
 # =========================================================================

@@ -274,7 +274,9 @@ class ZabbixClient:
             "output": [
                 "itemid", "hostid", "name", "key_", "lastvalue",
                 "units", "value_type", "lastclock", "status",
-                "type",   # item type: 0=zabbix_agent, 19=http_agent, etc.
+                "state",  # 0=normal, 1=not_supported (critical for HTTP Agent avail)
+                "type",   # 0=zabbix_agent, 19=http_agent, 7=active_agent, etc.
+                "error",  # item-level error message when state=1
             ],
             "hostids": host_ids,
             "filter": {"status": "0"},  # only enabled items
