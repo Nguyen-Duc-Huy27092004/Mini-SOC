@@ -1,17 +1,65 @@
 import { useEffect, useState } from 'react';
 import { 
   Server, ServerOff, AlertTriangle, ShieldAlert,
-  Activity, Zap, Clock, Search, CheckCircle2, XCircle
+  Activity, Zap, Clock, Search, CheckCircle2, XCircle,
+  Cpu, Globe, Radio
 } from 'lucide-react';
 import { getOverview, getTopServers, getProblems, getHosts } from '../api';
 import type { ZabbixOverviewResponse, ZabbixTopServer, ZabbixProblemOut, ZabbixHostOut } from '../types';
 
+
+// ─── Agent type badge helpers ─────────────────────────────────────────────────
+
+/** Returns Tailwind classes for each agent type badge in the table */
+function agentTypeBadge(type: string): string {
+  switch (type) {
+    case 'Zabbix Agent':
+      return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30';
+    case 'SNMP':
+      return 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30';
+    case 'HTTP Agent':
+      return 'text-violet-400 bg-violet-500/10 border-violet-500/30';
+    case 'IPMI':
+      return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
+    case 'JMX':
+      return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+    default:
+      return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
+  }
+}
+
+/** Returns Tailwind classes for the active filter button */
+function agentTypeBadgeActive(type: string): string {
+  switch (type) {
+    case 'All':        return 'bg-indigo-600 border-indigo-500 text-white';
+    case 'Zabbix Agent': return 'bg-indigo-500/20 border-indigo-400 text-indigo-300';
+    case 'SNMP':       return 'bg-cyan-500/20 border-cyan-400 text-cyan-300';
+    case 'HTTP Agent': return 'bg-violet-500/20 border-violet-400 text-violet-300';
+    case 'IPMI':       return 'bg-orange-500/20 border-orange-400 text-orange-300';
+    case 'JMX':        return 'bg-amber-500/20 border-amber-400 text-amber-300';
+    default:           return 'bg-slate-700 border-slate-500 text-slate-200';
+  }
+}
+
+/** Returns a small icon element for each agent type */
+function agentTypeIcon(type: string) {
+  const cls = 'w-2.5 h-2.5';
+  switch (type) {
+    case 'Zabbix Agent': return <Cpu className={cls} />;
+    case 'HTTP Agent':   return <Globe className={cls} />;
+    case 'SNMP':         return <Radio className={cls} />;
+    default:             return null;
+  }
+}
+
 export function InfrastructureDashboard() {
+
   const [overview, setOverview] = useState<ZabbixOverviewResponse | null>(null);
   const [topServers, setTopServers] = useState<ZabbixTopServer[]>([]);
   const [problems, setProblems] = useState<ZabbixProblemOut[]>([]);
   const [hosts, setHosts] = useState<ZabbixHostOut[]>([]);
   const [search, setSearch] = useState('');
+  const [agentFilter, setAgentFilter] = useState<string>('All');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,10 +108,19 @@ export function InfrastructureDashboard() {
     );
   }
 
-  const filteredHosts = hosts.filter(h => 
-    h.name.toLowerCase().includes(search.toLowerCase()) || 
-    (h.ip_address && h.ip_address.includes(search))
-  );
+  const filteredHosts = hosts.filter(h => {
+    const matchSearch = 
+      h.name.toLowerCase().includes(search.toLowerCase()) ||
+      (h.ip_address && h.ip_address.includes(search)) ||
+      h.agent_types.some(t => t.toLowerCase().includes(search.toLowerCase()));
+    const matchAgent = agentFilter === 'All' || h.agent_types.includes(agentFilter);
+    return matchSearch && matchAgent;
+  });
+
+  // Derive unique agent types for filter tabs
+  const agentTypeOptions = ['All', ...Array.from(
+    new Set(hosts.flatMap(h => h.agent_types))
+  ).sort()];
 
   return (
     <div className="space-y-6">
@@ -246,27 +303,49 @@ export function InfrastructureDashboard() {
       {/* Host List Table */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
         <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <Server className="w-4 h-4 text-indigo-400" />
-            Danh sách máy chủ giám sát ({hosts.length})
-          </h2>
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input 
-              type="text"
-              placeholder="Tìm kiếm máy chủ, IP..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full md:w-64 transition"
-            />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <Server className="w-4 h-4 text-indigo-400" />
+              Danh sách máy chủ giám sát ({filteredHosts.length}/{hosts.length})
+            </h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Agent Type Filter Tabs */}
+              <div className="flex items-center gap-1 flex-wrap">
+                {agentTypeOptions.map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setAgentFilter(type)}
+                    className={`px-2.5 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition ${
+                      agentFilter === type
+                        ? agentTypeBadgeActive(type)
+                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                    }`}
+                  >
+                    {type === 'All' ? 'Tất cả' : type}
+                  </button>
+                ))}
+              </div>
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text"
+                  placeholder="Tên, IP, giao thức..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full md:w-56 transition"
+                />
+              </div>
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+          <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
               <tr className="bg-slate-900/80 border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
                 <th className="px-5 py-3">Tên máy chủ</th>
                 <th className="px-5 py-3">Địa chỉ IP</th>
+                <th className="px-5 py-3">Giao thức</th>
                 <th className="px-5 py-3">Trạng thái</th>
                 <th className="px-5 py-3 text-center">Vấn đề</th>
                 <th className="px-5 py-3">Cảnh báo cao nhất</th>
@@ -275,7 +354,7 @@ export function InfrastructureDashboard() {
             <tbody className="divide-y divide-slate-800/50">
               {filteredHosts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-slate-500 text-sm">
+                  <td colSpan={6} className="px-5 py-8 text-center text-slate-500 text-sm">
                     Không tìm thấy máy chủ nào phù hợp.
                   </td>
                 </tr>
@@ -290,6 +369,24 @@ export function InfrastructureDashboard() {
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-slate-400">
                       {host.ip_address || '—'}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(host.agent_types ?? []).length === 0 ? (
+                          <span className="text-[10px] text-slate-600">—</span>
+                        ) : (
+                          host.agent_types.map(type => (
+                            <span
+                              key={type}
+                              title={type}
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${agentTypeBadge(type)}`}
+                            >
+                              {agentTypeIcon(type)}
+                              {type}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border ${

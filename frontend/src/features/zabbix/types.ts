@@ -19,6 +19,7 @@ export interface ZabbixHostOut {
   available_label: string;
   ip_address?: string | null;
   groups: string[];
+  agent_types: string[];   // e.g. ["Zabbix Agent"], ["SNMP"], ["HTTP Agent"]
   problem_count: number;
   max_severity: number;
   max_severity_label: string;
