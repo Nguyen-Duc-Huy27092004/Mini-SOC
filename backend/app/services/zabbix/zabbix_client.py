@@ -215,6 +215,7 @@ class ZabbixClient:
         output: List[str] = None,
         selectGroups: str = "extend",
         selectInterfaces: str = "extend",
+        selectParentTemplates: Any = None,
         selectItems: str = None,
         monitored_hosts: int = 1,
     ) -> List[Dict[str, Any]]:
@@ -223,18 +224,22 @@ class ZabbixClient:
             "output": output or [
                 "hostid", "host", "name", "status",
                 # Top-level availability fields (Zabbix < 6.4 style, kept for compat)
-                "available",       # Zabbix Agent (type 1)
-                "snmp_available",  # SNMP (type 2)
-                "ipmi_available",  # IPMI (type 3)
-                "jmx_available",   # JMX (type 4)
+                "available",          # Zabbix Agent (type 1)
+                "snmp_available",     # SNMP (type 2)
+                "ipmi_available",     # IPMI (type 3)
+                "jmx_available",      # JMX (type 4)
+                # Maintenance fields
+                "maintenance_status", # 0=no maintenance, 1=in maintenance
+                "maintenance_from",   # Unix timestamp when maintenance started
+                "maintenance_type",   # 0=with data collection, 1=without
                 "error", "description",
             ],
             # Always request interfaces so we can detect Zabbix Agent / SNMP / HTTP Agent
             "selectInterfaces": selectInterfaces,
             # Always request groups for display
             "selectGroups": selectGroups,
-            # Always request templates to map semantic agent types
-            "selectParentTemplates": ["name"],
+            # Always request templates to map semantic agent types (protocol detection Step 3)
+            "selectParentTemplates": selectParentTemplates or ["name"],
             # Only fetch monitored hosts (status=0 means monitored in Zabbix)
             "filter": {"status": "0"},
         }

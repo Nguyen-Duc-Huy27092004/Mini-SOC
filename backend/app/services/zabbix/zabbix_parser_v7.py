@@ -362,8 +362,12 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
                     "main": bool(int(iface.get("main", 0))),
                 })
                 # Interface-level availability (Zabbix >= 6.4)
+                # If the field is absent (older Zabbix), treat as unknown (0)
+                # so it doesn't incorrectly block overall availability.
                 if "available" in iface:
                     avail_values.append(int(iface.get("available", 0)))
+                else:
+                    avail_values.append(0)  # interface exists but avail unknown
                 # Classify agent type from interface type
                 if itype == 1:
                     agent_types.add("Zabbix Agent")
@@ -393,6 +397,10 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
                 semantic_types.add("Zabbix Agent")
             elif "snmp" in lower_name or "printer" in lower_name:
                 semantic_types.add("SNMP")
+            elif "ipmi" in lower_name or "idrac" in lower_name or "ilo" in lower_name:
+                semantic_types.add("IPMI")
+            elif "jmx" in lower_name:
+                semantic_types.add("JMX")
                 
         if semantic_types:
             agent_types = semantic_types
@@ -423,11 +431,11 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def parse_host_list(hosts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Parse list of hosts, filtering out failures."""
+    """Parse list of hosts, filtering out failures (empty dict results)."""
     parsed = []
     for host in hosts:
         parsed_host = parse_host(host)
-        if parsed_host:
+        if parsed_host:  # filter empty-dict failures
             parsed.append(parsed_host)
     return parsed
 

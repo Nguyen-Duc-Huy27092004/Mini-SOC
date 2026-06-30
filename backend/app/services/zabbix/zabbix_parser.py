@@ -103,131 +103,165 @@ def _unix_to_iso(value: Any) -> Optional[str]:
 
 def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize a single host record from host.get.
-    
-    Agent type detection strategy:
-      1. If interfaces list is present → read interface.type to classify agent
-      2. Fallback (Zabbix < 6.4 or no interfaces): use top-level
-         available / snmp_available / ipmi_available / jmx_available fields
-      3. If still no type found but host is monitored → mark as HTTP Agent / Simple
+
+    Agent type detection strategy (4-step priority):
+      1. Top-level availability fields (available/snmp_available/ipmi_available/jmx_available)
+         → always present in all Zabbix versions, used as baseline.
+      2. Interface list (selectInterfaces=extend): read interface.type.
+         In Zabbix ≥ 6.4 each interface also carries its own `available` field;
+         in older versions we infer availability from whether the interface exists.
+      3. Semantic override: group names + template names contain keywords like
+         "HTTP Agent", "SNMP", "Windows", etc. — these take precedence over raw
+         interface types because the admin explicitly tagged the host.
+      4. Fallback: monitored host with no detected type → HTTP Agent / internal check.
     """
-    status_int = _safe_int(raw.get("status"), 0)
+    try:
+        status_int = _safe_int(raw.get("status"), 0)
 
-    # Step 1: Collect top-level availability codes (Zabbix < 6.4 style).
-    # These fields are present in all Zabbix versions and give us a
-    # fallback availability status when interface-level data is absent.
-    top_level_avail = {
-        "agent":  _safe_int(raw.get("available"),      0),  # Zabbix Agent
-        "snmp":   _safe_int(raw.get("snmp_available"), 0),  # SNMP
-        "ipmi":   _safe_int(raw.get("ipmi_available"), 0),  # IPMI
-        "jmx":    _safe_int(raw.get("jmx_available"),  0),  # JMX
-    }
-    avail_values = list(top_level_avail.values())
-    agent_types: set[str] = set()
+        # ── Step 1: top-level availability fields ────────────────────────────
+        # These fields exist in ALL Zabbix versions and tell us which protocol
+        # interfaces were at least attempted.  0=unknown, 1=available, 2=unavail.
+        top_level_avail = {
+            "agent": _safe_int(raw.get("available"),      0),
+            "snmp":  _safe_int(raw.get("snmp_available"), 0),
+            "ipmi":  _safe_int(raw.get("ipmi_available"), 0),
+            "jmx":   _safe_int(raw.get("jmx_available"),  0),
+        }
+        avail_values: List[int] = list(top_level_avail.values())
+        agent_types: set[str] = set()
 
-    # If top-level fields show a non-zero value, we know the agent type even
-    # without interface data.
-    if top_level_avail["agent"] != 0:
-        agent_types.add("Zabbix Agent")
-    if top_level_avail["snmp"] != 0:
-        agent_types.add("SNMP")
-    if top_level_avail["ipmi"] != 0:
-        agent_types.add("IPMI")
-    if top_level_avail["jmx"] != 0:
-        agent_types.add("JMX")
+        if top_level_avail["agent"] != 0:
+            agent_types.add("Zabbix Agent")
+        if top_level_avail["snmp"] != 0:
+            agent_types.add("SNMP")
+        if top_level_avail["ipmi"] != 0:
+            agent_types.add("IPMI")
+        if top_level_avail["jmx"] != 0:
+            agent_types.add("JMX")
 
-    # Step 2: Process interfaces list (Zabbix >= 6.4 moves availability into
-    # each interface object; also gives us the interface type regardless of version).
-    interfaces = raw.get("interfaces") or []
-    ip_address: Optional[str] = None
+        # ── Step 2: interface list ────────────────────────────────────────────
+        interfaces = raw.get("interfaces") or []
+        ip_address: Optional[str] = None
 
-    if isinstance(interfaces, list) and interfaces:
-        # Pick the primary interface IP (main=1 preferred, else first)
-        primary = next((i for i in interfaces if isinstance(i, dict) and i.get("main") in ("1", 1, True)), interfaces[0])
-        ip_address = primary.get("ip") or primary.get("dns") or None
+        if isinstance(interfaces, list) and interfaces:
+            # Primary IP: prefer interface marked main=1, else use first
+            primary = next(
+                (i for i in interfaces
+                 if isinstance(i, dict) and i.get("main") in ("1", 1, True)),
+                interfaces[0]
+            )
+            ip_address = primary.get("ip") or primary.get("dns") or None
 
-        for iface in interfaces:
-            if not isinstance(iface, dict):
-                continue
+            for iface in interfaces:
+                if not isinstance(iface, dict):
+                    continue
 
-            # Interface-level availability (Zabbix >= 6.4)
-            if "available" in iface:
-                avail_values.append(_safe_int(iface.get("available"), 0))
+                itype = _safe_int(iface.get("type"), 0)
 
-            # Interface type → agent type label
-            itype = _safe_int(iface.get("type"), 0)
-            if itype == 1:
-                agent_types.add("Zabbix Agent")
-            elif itype == 2:
-                agent_types.add("SNMP")
-            elif itype == 3:
-                agent_types.add("IPMI")
-            elif itype == 4:
-                agent_types.add("JMX")
+                # Interface-level availability (Zabbix ≥ 6.4).
+                # If the field is absent (older Zabbix), we still know the
+                # protocol from itype — treat it as "configured" (unknown avail).
+                if "available" in iface:
+                    avail_values.append(_safe_int(iface["available"], 0))
+                else:
+                    # Interface exists but no per-interface avail → mark as
+                    # unknown (0) so it doesn't incorrectly block availability.
+                    avail_values.append(0)
 
-    avail_int = _resolve_composite_availability(avail_values)
+                if itype == 1:
+                    agent_types.add("Zabbix Agent")
+                elif itype == 2:
+                    agent_types.add("SNMP")
+                elif itype == 3:
+                    agent_types.add("IPMI")
+                elif itype == 4:
+                    agent_types.add("JMX")
 
-    # Extract group names
-    groups = raw.get("groups") or raw.get("hostGroups") or []
-    group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
-    
-    # Extract parent templates
-    templates = raw.get("parentTemplates") or []
-    template_names = [t.get("name", "") for t in templates if isinstance(t, dict)]
-    
-    # Step 3: Semantic override based on user-defined groups and templates.
-    # This solves the issue where Zabbix Active Agents have no interfaces, 
-    # or HTTP Agents use dummy Zabbix Agent interfaces.
-    semantic_types: set[str] = set()
-    for name in group_names + template_names:
-        lower_name = name.lower()
-        if "http agent" in lower_name or "dahua" in lower_name or "hikvision" in lower_name:
-            semantic_types.add("HTTP Agent")
-        elif "zabbix agent" in lower_name or "windows" in lower_name or "linux by zabbix" in lower_name:
-            semantic_types.add("Zabbix Agent")
-        elif "snmp" in lower_name or "printer" in lower_name:
-            semantic_types.add("SNMP")
-    
-    if semantic_types:
-        # If we successfully parsed types from semantics, use them to override the raw interface types!
-        # This matches the user's explicit groups/templates exactly.
-        agent_types = semantic_types
+        avail_int = _resolve_composite_availability(avail_values)
 
-    # Step 4: Fallback for monitored hosts with zero agent types (like active agents 
-    # without template keywords, or pure HTTP checks).
-    if not agent_types and status_int == 0:
-        agent_types.add("HTTP Agent")
-        # HTTP Agent hosts report availability via items, not interfaces.
-        # If all avail values are 0 (Unknown) and there's no error, treat as Available
-        if avail_int == 0 and not raw.get("error"):
-            avail_int = 1
+        # ── Step 3: semantic override via groups + templates ──────────────────
+        groups = raw.get("groups") or raw.get("hostGroups") or []
+        group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
 
+        templates = raw.get("parentTemplates") or []
+        template_names = [t.get("name", "") for t in templates if isinstance(t, dict)]
 
-    return {
-        "host_id": raw.get("hostid", ""),
-        "name": raw.get("name") or raw.get("host", ""),
-        "hostname": raw.get("host", ""),
-        "status": HOST_STATUS_MAP.get(status_int, "Unknown"),
-        "status_code": status_int,
-        "available": avail_int == 1,
-        "available_label": AVAILABILITY_MAP.get(avail_int, "Unknown"),
-        "available_code": avail_int,
-        "ip_address": ip_address,
-        "groups": group_names,
-        "agent_types": sorted(agent_types),  # sorted for consistent output
-        "error": raw.get("error") or None,
-    }
+        semantic_types: set[str] = set()
+        for name in group_names + template_names:
+            lower = name.lower()
+            if "http agent" in lower or "dahua" in lower or "hikvision" in lower:
+                semantic_types.add("HTTP Agent")
+            elif (
+                "zabbix agent" in lower
+                or "windows" in lower
+                or "linux by zabbix" in lower
+            ):
+                semantic_types.add("Zabbix Agent")
+            elif "snmp" in lower or "printer" in lower:
+                semantic_types.add("SNMP")
+            elif "ipmi" in lower or "idrac" in lower or "ilo" in lower:
+                semantic_types.add("IPMI")
+            elif "jmx" in lower:
+                semantic_types.add("JMX")
+
+        if semantic_types:
+            agent_types = semantic_types
+
+        # ── Step 4: fallback ─────────────────────────────────────────────────
+        if not agent_types and status_int == 0:
+            agent_types.add("HTTP Agent")
+            # HTTP Agent hosts track availability via item state, not interfaces.
+            # If all avail codes are 0 (unknown) and no error → assume available.
+            if avail_int == 0 and not raw.get("error"):
+                avail_int = 1
+
+        # ── Maintenance ───────────────────────────────────────────────────────
+        maintenance_status = _safe_int(raw.get("maintenance_status"), 0)
+        in_maintenance = maintenance_status == 1
+
+        return {
+            "host_id":        raw.get("hostid", ""),
+            "name":           raw.get("name") or raw.get("host", ""),
+            "hostname":       raw.get("host", ""),
+            "status":         HOST_STATUS_MAP.get(status_int, "Unknown"),
+            "status_code":    status_int,
+            "available":      avail_int == 1,
+            "available_label": AVAILABILITY_MAP.get(avail_int, "Unknown"),
+            "available_code": avail_int,
+            "ip_address":     ip_address,
+            "groups":         group_names,
+            "agent_types":    sorted(agent_types),
+            "error":          raw.get("error") or None,
+            "in_maintenance": in_maintenance,
+            "description":    raw.get("description") or None,
+        }
+
+    except Exception as exc:
+        import structlog as _sl
+        _sl.get_logger().error(
+            "parse_host_failed",
+            host_id=raw.get("hostid"),
+            error=str(exc),
+        )
+        return {}
 
 
 def parse_hosts(raw_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Normalize a list of hosts, removing duplicates by host_id."""
+    """Normalize a list of hosts, removing duplicates by host_id.
+
+    Hosts that fail to parse (return {}) are silently dropped so that a
+    single malformed record never crashes the entire host list.
+    """
     seen: set[str] = set()
     result = []
     for raw in (raw_list or []):
         host_id = raw.get("hostid", "")
-        if host_id in seen:
+        if not host_id or host_id in seen:
             continue
         seen.add(host_id)
-        result.append(parse_host(raw))
+        parsed = parse_host(raw)
+        if parsed:  # skip empty-dict failures
+            result.append(parsed)
     return result
 
 

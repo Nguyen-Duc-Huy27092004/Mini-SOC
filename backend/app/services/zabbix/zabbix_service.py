@@ -136,15 +136,18 @@ class ZabbixService:
         client = self._get_client()
 
         # Fetch hosts + problems + triggers in parallel.
-        # host_get: always pass selectInterfaces + selectGroups so parser can
-        #   detect Zabbix Agent (type=1), SNMP (type=2), HTTP Agent hosts, etc.
-        #   monitored_hosts is ignored — filter is hardcoded inside host_get.
+        # host_get: always pass selectInterfaces + selectGroups + selectParentTemplates
+        #   so the parser can detect all protocol types:
+        #   - Zabbix Agent (iface type=1), SNMP (type=2), IPMI (type=3), JMX (type=4)
+        #   - HTTP Agent (no real interfaces — detected from template/group names)
+        #   - Active Agent (no interfaces — detected from template names)
         try:
             import asyncio
             raw_hosts, raw_problems, raw_triggers = await asyncio.gather(
                 client.host_get(
                     selectInterfaces="extend",
                     selectGroups="extend",
+                    selectParentTemplates=["name"],  # critical for protocol detection Step 3
                 ),
                 client.problem_get(),
                 client.trigger_get(only_true=False),
@@ -153,11 +156,10 @@ class ZabbixService:
             logger.error("zabbix_fetch_all_failed", error=str(exc))
             return {}
 
-        total_hosts = len(raw_hosts or [])
-        logger.info("zabbix_hosts_fetched_raw", count=total_hosts)
+        total_raw = len(raw_hosts or [])
+        logger.info("zabbix_hosts_fetched_raw", count=total_raw)
 
         # Fetch items for resource usage (CPU/Mem/Disk keys only).
-        # item_get expects host_ids as a positional arg (ZabbixClient v1 style).
         host_ids = [h.get("hostid", "") for h in (raw_hosts or []) if h.get("hostid")]
         raw_items = []
         if host_ids:
@@ -167,11 +169,17 @@ class ZabbixService:
             except Exception as exc:
                 logger.warning("zabbix_items_fetch_failed", error=str(exc))
 
+        parsed_hosts = parse_hosts(raw_hosts or [])
+        # parse_hosts already filters empty-dict failures; log any drop
+        dropped = total_raw - len(parsed_hosts)
+        if dropped > 0:
+            logger.warning("zabbix_hosts_parse_dropped", dropped=dropped, total_raw=total_raw)
+
         data = {
-            "hosts": parse_hosts(raw_hosts or []),
+            "hosts":    parsed_hosts,
             "problems": parse_problems(raw_problems or []),
             "triggers": parse_triggers(raw_triggers or []),
-            "items": parse_items(raw_items or []),
+            "items":    parse_items(raw_items or []),
         }
         logger.info(
             "zabbix_fetch_all_done",
@@ -361,9 +369,25 @@ class ZabbixService:
             online = sum(1 for h in hosts if h.get("available_code") == 1)
             offline = sum(1 for h in hosts if h.get("available_code") == 2)
             unknown = sum(1 for h in hosts if h.get("available_code") == 0)
-            warning_hosts = sum(1 for h in hosts if h.get("available_code") == 1
-                                and any(p.get("severity", 0) in (2, 3) for p in problems))
-            critical_hosts = sum(1 for h in hosts if any(p.get("severity", 0) >= 4 for p in problems))
+
+            # Build a host_id → max severity lookup from active problems
+            from collections import defaultdict
+            host_max_sev: Dict[str, int] = defaultdict(int)
+            for p in problems:
+                obj_id = p.get("object_id", "")
+                sev = p.get("severity", 0)
+                if sev > host_max_sev[obj_id]:
+                    host_max_sev[obj_id] = sev
+
+            # warning_servers: online hosts that have at least one warning/average problem
+            warning_hosts = sum(
+                1 for h in hosts
+                if h.get("available_code") == 1 and host_max_sev.get(h["host_id"], 0) in (2, 3)
+            )
+            # critical_servers: any host with high/disaster problem
+            critical_hosts = sum(
+                1 for h in hosts if host_max_sev.get(h["host_id"], 0) >= 4
+            )
             disasters = sum(1 for p in problems if p.get("severity", 0) == 5)
             criticals = sum(1 for p in problems if p.get("severity", 0) == 4)
             unacked = sum(1 for p in problems if not p.get("acknowledged"))
