@@ -376,8 +376,28 @@ def parse_host(host: Dict[str, Any]) -> Dict[str, Any]:
 
             # Recompute availability now that interface-level values are added
             available_raw = _resolve_composite_availability(avail_values)
+            
+        # ── Step 3: Semantic override based on user-defined groups and templates
+        # This solves the issue where Zabbix Active Agents have no interfaces, 
+        # or HTTP Agents use dummy Zabbix Agent interfaces.
+        templates = host.get("parentTemplates") or []
+        template_names = [t.get("name", "") for t in templates if isinstance(t, dict)]
+        group_names = [g["name"] for g in parsed.get("groups", [])]
+        
+        semantic_types: set[str] = set()
+        for name in group_names + template_names:
+            lower_name = name.lower()
+            if "http agent" in lower_name or "dahua" in lower_name or "hikvision" in lower_name:
+                semantic_types.add("HTTP Agent")
+            elif "zabbix agent" in lower_name or "windows" in lower_name or "linux by zabbix" in lower_name:
+                semantic_types.add("Zabbix Agent")
+            elif "snmp" in lower_name or "printer" in lower_name:
+                semantic_types.add("SNMP")
+                
+        if semantic_types:
+            agent_types = semantic_types
 
-        # ── Step 3: Fallback — no interface = HTTP Agent / internal ──────────
+        # ── Step 4: Fallback — no interface = HTTP Agent / internal ──────────
         if not agent_types and status_raw == 0:
             agent_types.add("HTTP Agent")
             # HTTP Agent availability is determined by items, not interfaces.

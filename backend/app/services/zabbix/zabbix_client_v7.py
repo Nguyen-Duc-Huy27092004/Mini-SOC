@@ -316,6 +316,8 @@ class ZabbixClientV7:
             "selectInterfaces": selectInterfaces,
             # Always fetch groups (needed for display)
             "selectGroups": selectGroups,
+            # Always request templates to map semantic agent types
+            "selectParentTemplates": ["name"],
             # Only monitored hosts by default
             "filter": filter or {"status": "0"},
         }

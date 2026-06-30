@@ -166,20 +166,41 @@ def parse_host(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     avail_int = _resolve_composite_availability(avail_values)
 
-    # Step 3: If we still have no agent type but the host is being monitored
-    # (status=0), it uses HTTP Agent, Zabbix Trapper, or internal checks —
-    # none of which require an interface. Mark it accordingly.
+    # Extract group names
+    groups = raw.get("groups") or raw.get("hostGroups") or []
+    group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
+    
+    # Extract parent templates
+    templates = raw.get("parentTemplates") or []
+    template_names = [t.get("name", "") for t in templates if isinstance(t, dict)]
+    
+    # Step 3: Semantic override based on user-defined groups and templates.
+    # This solves the issue where Zabbix Active Agents have no interfaces, 
+    # or HTTP Agents use dummy Zabbix Agent interfaces.
+    semantic_types: set[str] = set()
+    for name in group_names + template_names:
+        lower_name = name.lower()
+        if "http agent" in lower_name or "dahua" in lower_name or "hikvision" in lower_name:
+            semantic_types.add("HTTP Agent")
+        elif "zabbix agent" in lower_name or "windows" in lower_name or "linux by zabbix" in lower_name:
+            semantic_types.add("Zabbix Agent")
+        elif "snmp" in lower_name or "printer" in lower_name:
+            semantic_types.add("SNMP")
+    
+    if semantic_types:
+        # If we successfully parsed types from semantics, use them to override the raw interface types!
+        # This matches the user's explicit groups/templates exactly.
+        agent_types = semantic_types
+
+    # Step 4: Fallback for monitored hosts with zero agent types (like active agents 
+    # without template keywords, or pure HTTP checks).
     if not agent_types and status_int == 0:
         agent_types.add("HTTP Agent")
         # HTTP Agent hosts report availability via items, not interfaces.
         # If all avail values are 0 (Unknown) and there's no error, treat as Available
-        # so these hosts don't get incorrectly counted as "Unknown".
         if avail_int == 0 and not raw.get("error"):
             avail_int = 1
 
-    # Extract group names
-    groups = raw.get("groups") or raw.get("hostGroups") or []
-    group_names = [g.get("name", "") for g in groups if isinstance(g, dict)]
 
     return {
         "host_id": raw.get("hostid", ""),
