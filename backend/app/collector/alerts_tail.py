@@ -428,6 +428,17 @@ class AlertsFileTailer:
                     await asyncio.sleep(2)
                     continue
 
+                try:
+                    stat = os.stat(self.alerts_file)
+                    current_size = stat.st_size
+                    current_inode = stat.st_ino
+                    if current_size < self._last_position or (self._last_inode is not None and current_inode != self._last_inode):
+                        logger.info("file_rotated_or_truncated", file=self.alerts_file)
+                        self._last_position = 0
+                    self._last_inode = current_inode
+                except OSError:
+                    pass
+
                 async with aiofiles.open(
                     self.alerts_file,
                     mode="r",
@@ -488,6 +499,17 @@ class AlertsFileTailer:
                     await asyncio.sleep(2)
 
                     continue
+
+                try:
+                    stat = os.stat(self.alerts_file)
+                    current_size = stat.st_size
+                    current_inode = stat.st_ino
+                    if current_size < self._last_position or (self._last_inode is not None and current_inode != self._last_inode):
+                        logger.info("file_rotated_or_truncated", file=self.alerts_file)
+                        self._last_position = 0
+                    self._last_inode = current_inode
+                except OSError:
+                    pass
 
                 async with aiofiles.open(
                     self.alerts_file,
