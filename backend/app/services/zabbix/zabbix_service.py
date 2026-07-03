@@ -63,6 +63,7 @@ from app.services.zabbix.zabbix_mapper import (
     map_resource_usage,
     map_severity_distribution,
     map_timeline,
+    map_timeline_from_events,
     map_top_hosts,
     map_triggers,
 )
@@ -345,12 +346,28 @@ class ZabbixService:
             return []
 
     async def get_timeline(self, hours: int = 24) -> List[ZabbixTimelinePoint]:
+        """Problem timeline bucketed by hour.
+
+        Now uses event.get() with a time_from filter instead of relying
+        solely on active problems from _fetch_all(). This means:
+        - Historical events (already resolved) also appear in the timeline.
+        - The timeline correctly reflects activity over the full window.
+        """
         try:
-            data = await self._fetch_all()
-            return map_timeline(data.get("problems", []), hours=hours)
+            client = self._get_client()
+            since_ts = int(
+                (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
+            )
+            raw_events = await client.event_get(time_from=since_ts, limit=2000)
+            return map_timeline_from_events(raw_events, hours=hours)
         except Exception as exc:
             logger.exception("zabbix_get_timeline_error", error=str(exc))
-            return []
+            # Graceful fallback: use active problems from cache
+            try:
+                data = await self._fetch_all()
+                return map_timeline(data.get("problems", []), hours=hours)
+            except Exception:
+                return []
 
     async def get_charts(self) -> ZabbixChartsResponse:
         """Bundle all chart data in a single response."""
@@ -361,10 +378,22 @@ class ZabbixService:
             triggers = data.get("triggers", [])
             items = data.get("items", [])
 
+            # For timeline in charts bundle: use the event-based timeline
+            # with 24h window (same as standalone /timeline endpoint).
+            try:
+                client = self._get_client()
+                since_ts = int(
+                    (datetime.now(timezone.utc) - timedelta(hours=24)).timestamp()
+                )
+                raw_events = await client.event_get(time_from=since_ts, limit=2000)
+                timeline_data = map_timeline_from_events(raw_events, hours=24)
+            except Exception:
+                timeline_data = map_timeline(problems)
+
             return ZabbixChartsResponse(
                 severity_distribution=map_severity_distribution(problems),
                 top_hosts=map_top_hosts(problems, triggers),
-                timeline=map_timeline(problems),
+                timeline=timeline_data,
                 resource_usage=map_resource_usage(items, hosts),
             )
         except Exception as exc:

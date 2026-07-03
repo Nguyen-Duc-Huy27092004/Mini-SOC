@@ -285,19 +285,74 @@ def map_timeline(
     problems: List[Dict[str, Any]],
     hours: int = 24,
 ) -> List[ZabbixTimelinePoint]:
+    """Build timeline from active problems (legacy path / fallback).
+
+    Buckets problems by hour using their `clock` datetime.
+    Timestamp format includes date so multi-day windows are readable.
+    """
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=hours)
 
-    # Bucket by hour × severity
     buckets: Dict[str, Counter] = defaultdict(Counter)
 
     for p in problems:
         clock = p.get("clock")
         if not clock or clock < since:
             continue
-        # Truncate to hour
-        hour_key = clock.strftime("%H:%M")
+        # Include date in the bucket key so multi-day timelines are correct
+        hour_key = clock.strftime("%Y-%m-%d %H:%M")
         sev = p.get("severity", 0)
+        buckets[hour_key][sev] += 1
+
+    result = []
+    for hour_key, sev_counter in sorted(buckets.items()):
+        total = sum(sev_counter.values())
+        max_sev = max(sev_counter.keys(), default=0)
+        result.append(ZabbixTimelinePoint(
+            timestamp=hour_key,
+            count=total,
+            severity=max_sev,
+            severity_label=PRIORITY_MAP.get(max_sev, "Not classified"),
+        ))
+    return result
+
+
+def map_timeline_from_events(
+    raw_events: List[Dict[str, Any]],
+    hours: int = 24,
+) -> List[ZabbixTimelinePoint]:
+    """Build timeline from Zabbix event.get() results.
+
+    Unlike map_timeline() which only uses active problems, this function
+    processes raw events from the event.get() API call — these include
+    both PROBLEM and RESOLVED events. This gives a complete picture of
+    incident activity over the time window.
+
+    Args:
+        raw_events: List of raw dicts from ZabbixClient.event_get()
+        hours: Look-back window in hours (must match the time_from used in event_get)
+    """
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=hours)
+
+    buckets: Dict[str, Counter] = defaultdict(Counter)
+
+    for ev in raw_events:
+        # event.get() returns clock as a Unix timestamp string
+        clock_raw = ev.get("clock")
+        if not clock_raw:
+            continue
+        try:
+            clock = datetime.fromtimestamp(int(clock_raw), tz=timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            continue
+
+        if clock < since:
+            continue
+
+        hour_key = clock.strftime("%Y-%m-%d %H:%M")
+        # Zabbix event severity: 0=Not classified, 1=Info, 2=Warning, 3=Average, 4=High, 5=Disaster
+        sev = int(ev.get("severity", 0) or 0)
         buckets[hour_key][sev] += 1
 
     result = []

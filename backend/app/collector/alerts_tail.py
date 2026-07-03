@@ -37,6 +37,9 @@ from pydantic import BaseModel, Field
 
 logger = structlog.get_logger()
 
+# State file path — stored alongside the alerts file so it persists across restarts
+_STATE_FILE_SUFFIX = ".mini_soc_tail_state.json"
+
 # =============================================================================
 # CONFIG
 # =============================================================================
@@ -52,6 +55,74 @@ class CollectorConfig:
     health_timeout_seconds: int = 60
     # Override auto-detected alerts file path
     alerts_file_override: str = ""
+    # Directory to store tail state file (default: same dir as alerts file)
+    state_dir_override: str = ""
+
+
+# =============================================================================
+# PERSISTENT TAIL STATE
+# =============================================================================
+
+class PersistentTailState:
+    """Saves and restores the tail position across service restarts.
+
+    Without this, when the container restarts the collector starts reading
+    from position 0 of the new day's file, potentially missing events that
+    were written between the last read and the restart.
+
+    The state is stored as a small JSON file next to the alerts file.
+    """
+
+    def __init__(self, alerts_file: str, state_dir: str = "") -> None:
+        alerts_path = Path(alerts_file)
+        if state_dir:
+            state_path = Path(state_dir)
+        else:
+            state_path = alerts_path.parent
+        self._state_file = state_path / (alerts_path.name + _STATE_FILE_SUFFIX)
+        self.position: int = 0
+        self.inode: Optional[int] = None
+        self.path: str = alerts_file
+
+    def load(self) -> None:
+        """Load state from disk. Silently ignores missing or corrupt files."""
+        try:
+            if self._state_file.exists():
+                raw = json.loads(self._state_file.read_text(encoding="utf-8"))
+                self.position = int(raw.get("position", 0))
+                self.inode = raw.get("inode")
+                self.path = raw.get("path", self.path)
+                logger.info(
+                    "tail_state_loaded",
+                    position=self.position,
+                    inode=self.inode,
+                    state_file=str(self._state_file),
+                )
+        except Exception as exc:
+            logger.warning("tail_state_load_failed", error=str(exc))
+            self.position = 0
+            self.inode = None
+
+    def save(self, position: int, inode: Optional[int], path: str) -> None:
+        """Persist current tail position to disk."""
+        try:
+            self.position = position
+            self.inode = inode
+            self.path = path
+            self._state_file.write_text(
+                json.dumps(
+                    {"position": position, "inode": inode, "path": path},
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("tail_state_save_failed", error=str(exc))
+
+    def reset(self, path: str) -> None:
+        """Reset state to start of file (e.g. after rotation)."""
+        self.save(0, None, path)
+        logger.info("tail_state_reset", path=path)
 
 
 # =============================================================================
@@ -360,6 +431,20 @@ class AlertsFileTailer:
 
         self.dedup = DeduplicationCache()
 
+        # Persistent state: survives container restarts
+        self._state = PersistentTailState(
+            alerts_file=self.alerts_file,
+            state_dir=config.state_dir_override,
+        )
+        self._state.load()
+        # Restore position from disk — but only if the file path and inode match
+        self._last_position = self._state.position
+        self._last_inode = self._state.inode
+
+        # Save state every N lines to bound data loss on sudden crash
+        self._lines_since_save: int = 0
+        self._SAVE_EVERY: int = 50  # save state after every 50 lines
+
     def _detect_alerts_file(self) -> str:
         # Priority 1: Use override from config (from settings.WAZUH_ALERTS_FILE)
         if self.config.alerts_file_override:
@@ -410,12 +495,15 @@ class AlertsFileTailer:
         """
         Async generator that yields raw alert dicts.
         Compatible with service.py's async for loop.
+
+        Uses persistent state so position survives container restarts.
         """
         self._is_running = True
         
         logger.info(
             "tailer_started",
-            file=self.alerts_file
+            file=self.alerts_file,
+            resume_position=self._last_position,
         )
 
         while self._is_running:
@@ -432,9 +520,13 @@ class AlertsFileTailer:
                     stat = os.stat(self.alerts_file)
                     current_size = stat.st_size
                     current_inode = stat.st_ino
-                    if current_size < self._last_position or (self._last_inode is not None and current_inode != self._last_inode):
+                    if (
+                        current_size < self._last_position
+                        or (self._last_inode is not None and current_inode != self._last_inode)
+                    ):
                         logger.info("file_rotated_or_truncated", file=self.alerts_file)
                         self._last_position = 0
+                        self._state.reset(self.alerts_file)
                     self._last_inode = current_inode
                 except OSError:
                     pass
@@ -458,12 +550,20 @@ class AlertsFileTailer:
                         try:
                             raw = json.loads(line)
                             yield raw
+                            self._lines_since_save += 1
                         except json.JSONDecodeError:
                             metrics.parse_errors += 1
                             continue
 
-                    self._last_position = await f.tell()
+                    new_pos = await f.tell()
+                    self._last_position = new_pos
+                    # Persist state periodically
+                    if self._lines_since_save >= self._SAVE_EVERY:
+                        self._state.save(new_pos, self._last_inode, self.alerts_file)
+                        self._lines_since_save = 0
 
+                # Always save on poll boundary
+                self._state.save(self._last_position, self._last_inode, self.alerts_file)
                 await asyncio.sleep(self.config.poll_interval)
 
             except Exception:
@@ -471,9 +571,9 @@ class AlertsFileTailer:
                 await asyncio.sleep(2)
 
     async def stop(self):
-
         self._is_running = False
-
+        # Save final position before shutting down
+        self._state.save(self._last_position, self._last_inode, self.alerts_file)
         logger.info("collector_stopped")
 
     async def _producer(self):

@@ -41,12 +41,25 @@ COUNTRY_COORDS = {
 
 class WazuhDataService:
     def _today_start(self) -> datetime:
+        """Midnight UTC today — kept for backward compat but prefer _window_start()."""
         now = datetime.now(timezone.utc)
         return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    async def get_summary(self, db: AsyncSession) -> DashboardSummary:
-        today = self._today_start()
-        base = and_(WazuhEvent.event_timestamp >= today, WazuhEvent.is_suppressed.is_(False))
+    def _window_start(self, hours: int = 24) -> datetime:
+        """Sliding time window: now() - hours. Used by all dashboard queries
+        to ensure data is always visible regardless of what time of day it is.
+        """
+        return datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    async def get_summary(self, db: AsyncSession, hours: int = 24) -> DashboardSummary:
+        """Summary over the last `hours` hours (default 24h sliding window).
+
+        Previously used today's midnight as the cutoff which caused dashboards
+        to show zero data on day D+1 if no new events had been ingested yet.
+        Now uses a rolling window so data is always visible.
+        """
+        since = self._window_start(hours=hours)
+        base = and_(WazuhEvent.event_timestamp >= since, WazuhEvent.is_suppressed.is_(False))
 
         alerts_today = await db.scalar(select(func.count(WazuhEvent.id)).where(base)) or 0
         critical = await db.scalar(
@@ -67,7 +80,7 @@ class WazuhDataService:
         attacks_blocked = await db.scalar(
             select(func.count(WazuhEvent.id)).where(
                 WazuhEvent.is_suppressed.is_(True),
-                WazuhEvent.event_timestamp >= today,
+                WazuhEvent.event_timestamp >= since,
             )
         ) or 0
 
@@ -87,8 +100,14 @@ class WazuhDataService:
             data_status="available" if (alerts_today > 0 or agents_total > 0) else "degraded",
         )
 
-    async def get_trends(self, db: AsyncSession, hours: int = 24) -> List[TrendPoint]:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async def get_trends(self, db: AsyncSession, hours: int = 168) -> List[TrendPoint]:
+        """Hourly trend buckets over the last `hours` hours.
+
+        Default changed from 24h → 168h (7 days) so the trend chart always
+        shows meaningful history even on day D+1 after deploy.
+        """
+        since = self._window_start(hours=hours)
+        # Use date + hour bucket so the label includes the date for multi-day windows
         hour_bucket = func.date_trunc("hour", WazuhEvent.event_timestamp)
         stmt = (
             select(hour_bucket, func.count(WazuhEvent.id))
@@ -98,15 +117,19 @@ class WazuhDataService:
         )
         rows = (await db.execute(stmt)).all()
         return [
-            TrendPoint(hour=r[0].strftime("%H:%M") if r[0] else "", count=r[1])
+            TrendPoint(
+                hour=r[0].strftime("%Y-%m-%d %H:%M") if r[0] else "",
+                count=r[1],
+            )
             for r in rows
         ]
 
-    async def get_severity_distribution(self, db: AsyncSession) -> List[SeverityBucket]:
-        today = self._today_start()
+    async def get_severity_distribution(self, db: AsyncSession, hours: int = 24) -> List[SeverityBucket]:
+        """Severity breakdown over last `hours` hours (default 24h rolling window)."""
+        since = self._window_start(hours=hours)
         stmt = (
             select(WazuhEvent.severity, func.count(WazuhEvent.id))
-            .where(WazuhEvent.event_timestamp >= today, WazuhEvent.is_suppressed.is_(False))
+            .where(WazuhEvent.event_timestamp >= since, WazuhEvent.is_suppressed.is_(False))
             .group_by(WazuhEvent.severity)
         )
         rows = (await db.execute(stmt)).all()
@@ -115,8 +138,9 @@ class WazuhDataService:
         buckets.sort(key=lambda b: order.get(b.severity, 9))
         return buckets
 
-    async def get_top_attacked_servers(self, db: AsyncSession, limit: int = 10) -> List[RankedServer]:
-        today = self._today_start()
+    async def get_top_attacked_servers(self, db: AsyncSession, limit: int = 10, hours: int = 24) -> List[RankedServer]:
+        """Top attacked servers over last `hours` hours (default 24h rolling window)."""
+        since = self._window_start(hours=hours)
         sev_rank = case(
             (WazuhEvent.severity == "critical", 4),
             (WazuhEvent.severity == "high", 3),
@@ -130,7 +154,7 @@ class WazuhDataService:
                 func.count(WazuhEvent.id),
                 func.max(sev_rank),
             )
-            .where(WazuhEvent.event_timestamp >= today, WazuhEvent.is_suppressed.is_(False))
+            .where(WazuhEvent.event_timestamp >= since, WazuhEvent.is_suppressed.is_(False))
             .group_by(WazuhEvent.agent_id, WazuhEvent.agent_name)
             .order_by(desc(func.count(WazuhEvent.id)))
             .limit(limit)
@@ -147,8 +171,9 @@ class WazuhDataService:
             for r in result
         ]
 
-    async def get_top_attack_ips(self, db: AsyncSession, limit: int = 10) -> List[RankedIp]:
-        today = self._today_start()
+    async def get_top_attack_ips(self, db: AsyncSession, limit: int = 10, hours: int = 24) -> List[RankedIp]:
+        """Top attacker IPs over last `hours` hours (default 24h rolling window)."""
+        since = self._window_start(hours=hours)
         stmt = (
             select(
                 WazuhEvent.source_ip,
@@ -157,7 +182,7 @@ class WazuhDataService:
                 WazuhEvent.category,
             )
             .where(
-                WazuhEvent.event_timestamp >= today,
+                WazuhEvent.event_timestamp >= since,
                 WazuhEvent.source_ip.isnot(None),
                 WazuhEvent.is_suppressed.is_(False),
             )
@@ -171,12 +196,13 @@ class WazuhDataService:
             for r in rows
         ]
 
-    async def get_geo_distribution(self, db: AsyncSession) -> List[GeoPoint]:
-        today = self._today_start()
+    async def get_geo_distribution(self, db: AsyncSession, hours: int = 24) -> List[GeoPoint]:
+        """Geographic distribution of attacks over last `hours` hours (default 24h)."""
+        since = self._window_start(hours=hours)
         stmt = (
             select(WazuhEvent.source_country, func.count(WazuhEvent.id))
             .where(
-                WazuhEvent.event_timestamp >= today,
+                WazuhEvent.event_timestamp >= since,
                 WazuhEvent.source_country.isnot(None),
                 WazuhEvent.is_suppressed.is_(False),
             )
@@ -207,13 +233,14 @@ class WazuhDataService:
             for a in agents
         ]
 
-    async def get_mitre_mapping(self, db: AsyncSession) -> List[MitreItem]:
+    async def get_mitre_mapping(self, db: AsyncSession, hours: int = 24) -> List[MitreItem]:
+        """MITRE ATT&CK mapping over last `hours` hours (default 24h rolling window)."""
         from app.services.correlation_engine import MITRE_MAP
 
-        today = self._today_start()
+        since = self._window_start(hours=hours)
         stmt = (
             select(WazuhEvent.category, func.count(WazuhEvent.id))
-            .where(WazuhEvent.event_timestamp >= today, WazuhEvent.is_suppressed.is_(False))
+            .where(WazuhEvent.event_timestamp >= since, WazuhEvent.is_suppressed.is_(False))
             .group_by(WazuhEvent.category)
         )
         rows = (await db.execute(stmt)).all()
@@ -373,12 +400,9 @@ class WazuhDataService:
         ]
         return {"logs": logs, "total": total}
 
-    async def get_user_monitoring(self, db: AsyncSession) -> dict:
-        from sqlalchemy import func, select
-        from datetime import datetime, timedelta, timezone
-        from app.models.event import WazuhEvent
-
-        since = datetime.now(timezone.utc) - timedelta(hours=24)
+    async def get_user_monitoring(self, db: AsyncSession, hours: int = 24) -> dict:
+        """Authentication events per user over last `hours` hours."""
+        since = self._window_start(hours=hours)
         stmt = (
             select(WazuhEvent.source_user, func.count(WazuhEvent.id))
             .where(
