@@ -34,13 +34,13 @@ export function ExecutiveDashboard() {
       setLoading(true);
       try {
         const [s, t, sev, srv, ips, g, m] = await Promise.all([
-          api.get('/dashboard/summary'),
-          api.get('/dashboard/trends'),
-          api.get('/dashboard/severity'),
-          api.get('/dashboard/top-attacked-servers'),
-          api.get('/dashboard/top-attack-ips'),
-          api.get('/dashboard/geo'),
-          api.get('/dashboard/mitre'),
+          api.get('/dashboard/summary', { params: { hours: 24 } }),
+          api.get('/dashboard/trends', { params: { hours: 168 } }),   // 7 ngày
+          api.get('/dashboard/severity', { params: { hours: 24 } }),
+          api.get('/dashboard/top-attacked-servers', { params: { hours: 24 } }),
+          api.get('/dashboard/top-attack-ips', { params: { hours: 24 } }),
+          api.get('/dashboard/geo', { params: { hours: 24 } }),
+          api.get('/dashboard/mitre', { params: { hours: 24 } }),
         ]);
         setSummary(s.data);
         setTrends(t.data);
@@ -59,8 +59,26 @@ export function ExecutiveDashboard() {
   const trendOpt = useMemo(() => ({
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 16, top: 24, bottom: 28 },
-    xAxis: { type: 'category', data: trends.map((x) => x.hour), axisLine: { lineStyle: { color: '#475569' } } },
+    grid: { left: 50, right: 16, top: 24, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: trends.map((x) => x.hour),
+      axisLine: { lineStyle: { color: '#475569' } },
+      axisLabel: {
+        // Shorten "2026-07-03 08:00" → "03/07 08h" for compact display
+        formatter: (val: string) => {
+          if (val.includes(' ')) {
+            const [datePart, timePart] = val.split(' ');
+            const [y, m, d] = datePart.split('-');
+            const h = timePart.split(':')[0];
+            return `${d}/${m} ${h}h`;
+          }
+          return val;
+        },
+        rotate: 30,
+        fontSize: 10,
+      },
+    },
     yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
     series: [{ type: 'line', smooth: true, areaStyle: { opacity: 0.2 }, data: trends.map((x) => x.count), color: '#22d3ee' }],
   }), [trends]);
@@ -114,7 +132,7 @@ export function ExecutiveDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Panel title="Xu hướng tấn công 24 giờ">
+        <Panel title="Xu hướng tấn công (7 ngày gần nhất)">
           <ReactECharts option={trendOpt} style={{ height: 280 }} notMerge lazyUpdate />
         </Panel>
         <Panel title="Phân bố mức độ">

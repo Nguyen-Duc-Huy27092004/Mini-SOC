@@ -130,7 +130,7 @@ export interface ZabbixTopServer {
 }
 
 export interface ZabbixTimelinePoint {
-  timestamp: string;   // "HH:MM"
+  timestamp: string;   // "YYYY-MM-DD HH:MM" (UTC hour bucket, multi-day safe)
   count: number;
   severity: number;
   severity_label: string;

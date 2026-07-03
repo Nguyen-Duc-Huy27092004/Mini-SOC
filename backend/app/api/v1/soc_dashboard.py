@@ -1,7 +1,8 @@
 """Executive & SOC dashboard APIs — PostgreSQL only."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -25,56 +26,62 @@ _roles = ["Super Admin", "SOC Analyst", "Manager", "Auditor", "IT Admin"]
 
 @router.get("/summary", response_model=DashboardSummary)
 async def dashboard_summary(
+    hours: int = Query(24, ge=1, le=720, description="Look-back window in hours (default 24h)"),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
-    return await wazuh_data.get_summary(db)
+    return await wazuh_data.get_summary(db, hours=hours)
 
 
 @router.get("/trends", response_model=list[TrendPoint])
 async def dashboard_trends(
+    hours: int = Query(168, ge=1, le=720, description="Look-back window in hours (default 168h = 7 days)"),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[TrendPoint]:
-    return await wazuh_data.get_trends(db)
+    return await wazuh_data.get_trends(db, hours=hours)
 
 
 @router.get("/severity", response_model=list[SeverityBucket])
 async def dashboard_severity(
+    hours: int = Query(24, ge=1, le=720),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[SeverityBucket]:
-    return await wazuh_data.get_severity_distribution(db)
+    return await wazuh_data.get_severity_distribution(db, hours=hours)
 
 
 @router.get("/top-attacked-servers", response_model=list[RankedServer])
 async def top_servers(
+    hours: int = Query(24, ge=1, le=720),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[RankedServer]:
-    return await wazuh_data.get_top_attacked_servers(db)
+    return await wazuh_data.get_top_attacked_servers(db, hours=hours)
 
 
 @router.get("/top-attack-ips", response_model=list[RankedIp])
 async def top_ips(
+    hours: int = Query(24, ge=1, le=720),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[RankedIp]:
-    return await wazuh_data.get_top_attack_ips(db)
+    return await wazuh_data.get_top_attack_ips(db, hours=hours)
 
 
 @router.get("/geo", response_model=list[GeoPoint])
 async def dashboard_geo(
+    hours: int = Query(24, ge=1, le=720),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[GeoPoint]:
-    return await wazuh_data.get_geo_distribution(db)
+    return await wazuh_data.get_geo_distribution(db, hours=hours)
 
 
 @router.get("/agents", response_model=list[AgentStatus])
@@ -88,11 +95,12 @@ async def dashboard_agents(
 
 @router.get("/mitre", response_model=list[MitreItem])
 async def dashboard_mitre(
+    hours: int = Query(24, ge=1, le=720),
     _: User = Depends(require_roles(_roles)),
     __: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ) -> list[MitreItem]:
-    return await wazuh_data.get_mitre_mapping(db)
+    return await wazuh_data.get_mitre_mapping(db, hours=hours)
 
 
 @router.get("/debug")
