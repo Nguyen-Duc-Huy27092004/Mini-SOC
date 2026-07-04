@@ -68,6 +68,7 @@ services:
       dockerfile: ../docker/backend.Dockerfile
     image: mini_soc_backend:latest
     container_name: mini_soc_backend_prod
+    user: "root"
     restart: always
     environment:
       # Core
