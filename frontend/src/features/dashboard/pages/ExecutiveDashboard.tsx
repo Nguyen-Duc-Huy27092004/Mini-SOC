@@ -69,7 +69,7 @@ export function ExecutiveDashboard() {
         formatter: (val: string) => {
           if (val.includes(' ')) {
             const [datePart, timePart] = val.split(' ');
-            const [y, m, d] = datePart.split('-');
+            const [_, m, d] = datePart.split('-');
             const h = timePart.split(':')[0];
             return `${d}/${m} ${h}h`;
           }
