@@ -22,7 +22,6 @@ from app.websocket.routes import router as ws_router
 
 logger = structlog.get_logger()
 
-collector_task: asyncio.Task | None = None
 sync_agents_task: asyncio.Task | None = None
 sync_zabbix_task: asyncio.Task | None = None
 poll_alerts_task: asyncio.Task | None = None
@@ -125,10 +124,6 @@ async def lifespan(app: FastAPI):
     # Start WebSocket subscription listener
     manager.start_listener_task()
     
-    # Start real-time alert collector
-    global collector_task
-    collector_task = asyncio.create_task(start_collector())
-    
     # Start periodic agent sync from Wazuh API
     global sync_agents_task
     sync_agents_task = asyncio.create_task(_sync_agents_loop())
@@ -149,13 +144,6 @@ async def lifespan(app: FastAPI):
 
     await logger.ainfo("app_shutting_down")
     manager.stop_listener_task()
-    
-    if collector_task:
-        collector_task.cancel()
-        try:
-            await asyncio.wait_for(asyncio.gather(collector_task, return_exceptions=True), timeout=5.0)
-        except asyncio.TimeoutError:
-            pass
     
     if sync_agents_task:
         sync_agents_task.cancel()

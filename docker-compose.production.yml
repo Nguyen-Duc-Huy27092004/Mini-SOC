@@ -147,6 +147,33 @@ services:
       - soc_net
 
   # ─────────────────────────────────────────────────────────────
+  # WAZUH COLLECTOR WORKER
+  # ─────────────────────────────────────────────────────────────
+  wazuh-collector:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    image: mini_soc_collector:latest
+    container_name: mini_soc_collector_prod
+    user: "root"
+    restart: always
+    command: ["python", "worker_collector.py"]
+    environment:
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      WAZUH_ALERTS_FILE: /var/ossec/logs/alerts/alerts.json
+    volumes:
+      - ${WAZUH_ALERTS_HOST_PATH:-/var/ossec/logs/alerts}:/var/ossec/logs/alerts:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - soc_net
+
+  # ─────────────────────────────────────────────────────────────
   # FRONTEND (React → Nginx static server)
   # ─────────────────────────────────────────────────────────────
   frontend:

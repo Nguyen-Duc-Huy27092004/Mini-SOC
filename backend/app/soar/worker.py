@@ -6,6 +6,7 @@ from app.core.database import async_session_maker
 from app.soar.playbook_engine import PlaybookEngine
 from sqlalchemy import select
 from app.models.zabbix import ZabbixProblem
+from app.soar.scheduler import SoarScheduler
 
 logger = structlog.get_logger()
 
@@ -20,6 +21,9 @@ class SoarWorker:
         logger.info("soar_worker_starting")
         self.is_running = True
         
+        # Start persistent scheduler
+        SoarScheduler.start()
+        
         self._tasks.append(asyncio.create_task(self._subscribe_to_wazuh_alerts()))
         self._tasks.append(asyncio.create_task(self._poll_zabbix_problems()))
 
@@ -27,6 +31,7 @@ class SoarWorker:
         """Stops the worker."""
         logger.info("soar_worker_stopping")
         self.is_running = False
+        SoarScheduler.stop()
         for task in self._tasks:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -62,9 +67,17 @@ class SoarWorker:
 
         logger.info("soar_started_zabbix_polling")
         try:
+            # We use the raw aioredis client
+            redis_client = self.redis.client
+            
             while self.is_running:
                 try:
-                    async with async_session_maker() as session:
+                    # 1. Acquire Distributed Lock (timeout 5s so if crashed, it releases quickly)
+                    async with redis_client.lock("soar:zabbix_poller_lock", timeout=5.0, blocking_timeout=1.0) as lock:
+                        if not lock:
+                            continue # Could not acquire lock, another instance is polling
+                            
+                        async with async_session_maker() as session:
                         # Fetch recent unresolved problems we haven't seen 
                         # Since UUIDs aren't strictly ordered integers, we can use clock_id or created_at
                         # For simplicity, we just fetch problems created in the last 15 seconds
@@ -83,12 +96,24 @@ class SoarWorker:
                                 "severity": prob.severity,
                                 "status": prob.status
                             }
-                            # Simple deduplication could be added via Redis cache
-                            
-                            engine = PlaybookEngine(session)
-                            await engine.process_trigger(trigger_source="zabbix", trigger_data=prob_data)
+                            # Simple deduplication via Redis SETNX
+                            dedup_key = f"soar:zabbix_dedup:{prob.problem_id}"
+                            is_new = await redis_client.setnx(dedup_key, "1")
+                            if is_new:
+                                # Expire after 30 days to keep redis clean
+                                await redis_client.expire(dedup_key, 2592000)
+                                engine = PlaybookEngine(session)
+                                await engine.process_trigger(trigger_source="zabbix", trigger_data=prob_data)
+                            else:
+                                logger.debug("soar_zabbix_problem_duplicate", problem_id=prob.problem_id)
+                except asyncio.TimeoutError:
+                    # Could not acquire lock, skip this interval
+                    pass
                 except Exception as e:
-                    logger.error("soar_zabbix_poll_error", error=str(e))
+                    if "LockError" in str(type(e)):
+                        pass
+                    else:
+                        logger.error("soar_zabbix_poll_error", error=str(e))
                 
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:

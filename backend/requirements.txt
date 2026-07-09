@@ -45,6 +45,7 @@ maxminddb>=2.6.0
 
 # Other Utilities
 python-multipart==0.0.9
+apscheduler==3.10.4
 
 # Testing
 pytest==8.2.1
