@@ -26,6 +26,9 @@ collector_task: asyncio.Task | None = None
 sync_agents_task: asyncio.Task | None = None
 sync_zabbix_task: asyncio.Task | None = None
 poll_alerts_task: asyncio.Task | None = None
+soar_worker_task: asyncio.Task | None = None
+from app.soar.worker import SoarWorker
+soar_worker_instance = SoarWorker()
 
 
 def _init_sentry() -> None:
@@ -138,6 +141,10 @@ async def lifespan(app: FastAPI):
     global sync_zabbix_task
     sync_zabbix_task = asyncio.create_task(_sync_zabbix_loop())
 
+    # Start SOAR worker
+    global soar_worker_task
+    soar_worker_task = asyncio.create_task(soar_worker_instance.start())
+
     yield
 
     await logger.ainfo("app_shutting_down")
@@ -168,6 +175,13 @@ async def lifespan(app: FastAPI):
         sync_zabbix_task.cancel()
         try:
             await asyncio.wait_for(asyncio.gather(sync_zabbix_task, return_exceptions=True), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+            
+    if soar_worker_task:
+        await soar_worker_instance.stop()
+        try:
+            await asyncio.wait_for(asyncio.gather(soar_worker_task, return_exceptions=True), timeout=5.0)
         except asyncio.TimeoutError:
             pass
     

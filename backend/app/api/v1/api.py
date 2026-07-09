@@ -11,6 +11,7 @@ from app.api.v1.soc_dashboard import router as soc_dashboard_router
 from app.api.v1.users import router as users_router
 from app.api.v1.zabbix import router as zabbix_router
 from app.api.v1.wazuh import router as wazuh_router
+from app.api.v1.soar import router as soar_router
 
 api_router = APIRouter()
 
@@ -27,4 +28,6 @@ api_router.include_router(monitoring_router, prefix="/monitoring", tags=["Monito
 api_router.include_router(zabbix_router, prefix="/zabbix", tags=["Zabbix"])
 # ── Wazuh Integration ───────────────────────────────────────────────────────
 api_router.include_router(wazuh_router, prefix="/wazuh", tags=["Wazuh"])
+# ── SOAR Integration ────────────────────────────────────────────────────────
+api_router.include_router(soar_router, prefix="/soar", tags=["SOAR"])
 

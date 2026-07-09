@@ -15,6 +15,12 @@ import { MaintenanceCenter } from '../features/zabbix/pages/MaintenanceCenter';
 import { TaskCenter } from '../features/zabbix/pages/TaskCenter';
 import { NotificationSettings } from '../features/zabbix/pages/NotificationSettings';
 
+// SOAR Pages
+import { SoarDashboard } from '../features/soar/pages/SoarDashboard';
+import { PlaybooksPage } from '../features/soar/pages/PlaybooksPage';
+import { RulesPage } from '../features/soar/pages/RulesPage';
+import { ApprovalsPage } from '../features/soar/pages/ApprovalsPage';
+
 function Protected({ children }: { children: React.ReactNode }) {
   const ok = useAuthStore(selectIsAuthenticated);
   return ok ? <>{children}</> : <Navigate to="/login" replace />;
@@ -56,6 +62,12 @@ export function AppRouter() {
         <Route path="infrastructure/maintenance" element={<MaintenanceCenter />} />
         <Route path="infrastructure/tasks" element={<TaskCenter />} />
         <Route path="infrastructure/notifications" element={<NotificationSettings />} />
+
+        {/* SOAR Routes */}
+        <Route path="soar" element={<SoarDashboard />} />
+        <Route path="soar/playbooks" element={<PlaybooksPage />} />
+        <Route path="soar/rules" element={<RulesPage />} />
+        <Route path="soar/approvals" element={<ApprovalsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -14,6 +14,14 @@ from app.models.zabbix import (
     ZabbixTask,
     ZabbixNotification,
 )
+from app.models.soar import (
+    SoarAction,
+    SoarApproval,
+    SoarLog,
+    SoarPlaybook,
+    SoarRule,
+    SoarRun,
+)
 
 __all__ = [
     # Wazuh / Core
@@ -40,4 +48,11 @@ __all__ = [
     "ZabbixMaintenance",
     "ZabbixTask",
     "ZabbixNotification",
+    # SOAR
+    "SoarAction",
+    "SoarApproval",
+    "SoarLog",
+    "SoarPlaybook",
+    "SoarRule",
+    "SoarRun",
 ]

@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Bell, ShieldAlert, LogOut, Wifi, WifiOff,
-  Briefcase, Wrench, Shield, User, Server, CalendarClock, ListTodo, MailWarning
+  Briefcase, Wrench, Shield, User, Server, CalendarClock, ListTodo, MailWarning,
+  Workflow, PlaySquare, CheckSquare
 } from 'lucide-react';
 import { useAuthStore, selectUser } from '../../features/auth/store';
 import { useAlertStore } from '../../features/alerts/store';
@@ -22,6 +23,13 @@ const zabbixNav = [
   { to: '/infrastructure/maintenance', label: 'Trung tâm bảo trì', icon: CalendarClock },
   { to: '/infrastructure/tasks', label: 'Trung tâm công việc', icon: ListTodo },
   { to: '/infrastructure/notifications', label: 'Bảng thông báo', icon: MailWarning },
+];
+
+const soarNav = [
+  { to: '/soar', label: 'Tổng quan SOAR', icon: LayoutDashboard },
+  { to: '/soar/playbooks', label: 'Quản lý Playbooks', icon: PlaySquare },
+  { to: '/soar/rules', label: 'Cấu hình Rules', icon: Workflow },
+  { to: '/soar/approvals', label: 'Phê duyệt', icon: CheckSquare },
 ];
 
 export function MainLayout() {
@@ -106,6 +114,30 @@ export function MainLayout() {
                     `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
                       isActive
                         ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          {/* SOAR Section */}
+          <div>
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Tự động hoá (SOAR)</p>
+            <div className="space-y-0.5">
+              {soarNav.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/soar'}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
+                      isActive
+                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                     }`
                   }
