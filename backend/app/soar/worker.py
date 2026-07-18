@@ -92,15 +92,9 @@ class SoarWorker:
 
             while self.is_running:
                 try:
-                    # 1. Acquire Distributed Lock (timeout 5s so if crashed, it releases quickly)
-                    async with redis_client.lock("soar:zabbix_poller_lock", timeout=5.0, blocking_timeout=1.0) as lock:
-                        if not lock:
-                            continue # Could not acquire lock, another instance is polling
-                            
+                    # Acquire Distributed Lock — raises LockError if not available within blocking_timeout
+                    async with redis_client.lock("soar:zabbix_poller_lock", timeout=5.0, blocking_timeout=1.0):
                         async with async_session_maker() as session:
-                            # Fetch recent unresolved problems we haven't seen
-                            # Since UUIDs aren't strictly ordered integers, we can use clock_id or created_at
-                            # For simplicity, we just fetch problems created in the last 15 seconds
                             import datetime
                             recent_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=poll_interval + 5)
 
@@ -109,7 +103,6 @@ class SoarWorker:
                             problems = result.scalars().all()
 
                             for prob in problems:
-                                # Convert to dict for trigger data
                                 prob_data = {
                                     "problem_id": prob.problem_id,
                                     "name": prob.name,
@@ -127,14 +120,15 @@ class SoarWorker:
                                 else:
                                     logger.debug("soar_zabbix_problem_duplicate", problem_id=prob.problem_id)
                 except asyncio.TimeoutError:
-                    # Could not acquire lock, skip this interval
-                    pass
+                    pass  # Lock wait timed out — another worker instance is polling, skip
                 except Exception as e:
-                    if "LockError" in str(type(e)):
-                        pass
+                    exc_type = type(e).__name__
+                    if exc_type in ("LockError", "LockNotOwnedError", "LockNotAvailableError"):
+                        pass  # Could not acquire lock, another instance is polling
                     else:
                         logger.error("soar_zabbix_poll_error", error=str(e))
-                
+
                 await asyncio.sleep(poll_interval)
+
         except asyncio.CancelledError:
             pass

@@ -52,11 +52,6 @@ log_ok "Docker Compose detected: $DC"
 # -----------------------------------------------------------------------
 log_section "PRE-FLIGHT CHECKS"
 
-# -----------------------------------------------------------------------
-# PRE-FLIGHT CHECKS
-# -----------------------------------------------------------------------
-log_section "PRE-FLIGHT CHECKS"
-
 log_info "Checking required commands..."
 command -v docker  &>/dev/null || die "Docker not installed."
 log_ok "Docker: $(docker --version)"
@@ -368,7 +363,7 @@ printf 'SMTP_HOST=%s\n'                        "$SMTP_HOST"
 printf 'SMTP_PORT=%s\n'                        "$SMTP_PORT"
 printf 'SMTP_USER=%s\n'                        "$SMTP_USER"
 printf 'SMTP_PASSWORD=%s\n'                    "$SMTP_PASSWORD"
-printf 'SMTP_FROM_EMAIL=%s\n'                  "$SMTP_FROM_EMAIL"
+printf 'SMTP_FROM=%s\n'                        "$SMTP_FROM_EMAIL"
 printf '\n'
 printf '# ── Frontend build-time URLs ─────────────────────────────────────\n'
 printf 'VITE_API_URL=http://%s:%s/api/v1\n'   "$SERVER_IP" "$NGINX_PORT"

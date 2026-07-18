@@ -14,12 +14,13 @@ jobstores = {
     'default': RedisJobStore(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
-        password=settings.REDIS_PASSWORD or None,
+        password=settings.REDIS_PASSWORD.get_secret_value() if settings.REDIS_PASSWORD else None,
         db=1, # Use a different DB or just default
         jobs_key='soar_jobs',
         run_times_key='soar_run_times'
     )
 }
+
 
 scheduler = AsyncIOScheduler(jobstores=jobstores, timezone="UTC")
 
