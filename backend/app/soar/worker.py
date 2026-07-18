@@ -20,10 +20,15 @@ class SoarWorker:
         """Starts the SOAR background worker."""
         logger.info("soar_worker_starting")
         self.is_running = True
-        
+
         # Start persistent scheduler
         SoarScheduler.start()
-        
+
+        try:
+            await self.redis.initialize()
+        except Exception as e:
+            logger.warning("soar_redis_unavailable", error=str(e))
+
         self._tasks.append(asyncio.create_task(self._subscribe_to_wazuh_alerts()))
         self._tasks.append(asyncio.create_task(self._poll_zabbix_problems()))
 
@@ -38,9 +43,16 @@ class SoarWorker:
 
     async def _subscribe_to_wazuh_alerts(self):
         """Listens to real-time Wazuh alerts over Redis pub/sub."""
+        try:
+            if self.redis.client is None:
+                await self.redis.initialize()
+        except Exception as e:
+            logger.warning("soar_wazuh_subscribe_skipped", error=str(e))
+            return
+
         pubsub = self.redis.client.pubsub()
         await pubsub.subscribe("soc:alerts:realtime")
-        
+
         logger.info("soar_subscribed_to_wazuh")
         try:
             while self.is_running:
@@ -67,9 +79,17 @@ class SoarWorker:
 
         logger.info("soar_started_zabbix_polling")
         try:
+            if self.redis.client is None:
+                try:
+                    await self.redis.initialize()
+                except Exception as e:
+                    logger.warning("soar_redis_unavailable", error=str(e))
+                    await asyncio.sleep(poll_interval)
+                    return
+
             # We use the raw aioredis client
             redis_client = self.redis.client
-            
+
             while self.is_running:
                 try:
                     # 1. Acquire Distributed Lock (timeout 5s so if crashed, it releases quickly)
@@ -78,34 +98,34 @@ class SoarWorker:
                             continue # Could not acquire lock, another instance is polling
                             
                         async with async_session_maker() as session:
-                        # Fetch recent unresolved problems we haven't seen 
-                        # Since UUIDs aren't strictly ordered integers, we can use clock_id or created_at
-                        # For simplicity, we just fetch problems created in the last 15 seconds
-                        import datetime
-                        recent_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=poll_interval + 5)
-                        
-                        stmt = select(ZabbixProblem).where(ZabbixProblem.created_at >= recent_time)
-                        result = await session.execute(stmt)
-                        problems = result.scalars().all()
+                            # Fetch recent unresolved problems we haven't seen
+                            # Since UUIDs aren't strictly ordered integers, we can use clock_id or created_at
+                            # For simplicity, we just fetch problems created in the last 15 seconds
+                            import datetime
+                            recent_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=poll_interval + 5)
 
-                        for prob in problems:
-                            # Convert to dict for trigger data
-                            prob_data = {
-                                "problem_id": prob.problem_id,
-                                "name": prob.name,
-                                "severity": prob.severity,
-                                "status": prob.status
-                            }
-                            # Simple deduplication via Redis SETNX
-                            dedup_key = f"soar:zabbix_dedup:{prob.problem_id}"
-                            is_new = await redis_client.setnx(dedup_key, "1")
-                            if is_new:
-                                # Expire after 30 days to keep redis clean
-                                await redis_client.expire(dedup_key, 2592000)
-                                engine = PlaybookEngine(session)
-                                await engine.process_trigger(trigger_source="zabbix", trigger_data=prob_data)
-                            else:
-                                logger.debug("soar_zabbix_problem_duplicate", problem_id=prob.problem_id)
+                            stmt = select(ZabbixProblem).where(ZabbixProblem.created_at >= recent_time)
+                            result = await session.execute(stmt)
+                            problems = result.scalars().all()
+
+                            for prob in problems:
+                                # Convert to dict for trigger data
+                                prob_data = {
+                                    "problem_id": prob.problem_id,
+                                    "name": prob.name,
+                                    "severity": prob.severity,
+                                    "status": prob.status
+                                }
+                                # Simple deduplication via Redis SETNX
+                                dedup_key = f"soar:zabbix_dedup:{prob.problem_id}"
+                                is_new = await redis_client.setnx(dedup_key, "1")
+                                if is_new:
+                                    # Expire after 30 days to keep redis clean
+                                    await redis_client.expire(dedup_key, 2592000)
+                                    engine = PlaybookEngine(session)
+                                    await engine.process_trigger(trigger_source="zabbix", trigger_data=prob_data)
+                                else:
+                                    logger.debug("soar_zabbix_problem_duplicate", problem_id=prob.problem_id)
                 except asyncio.TimeoutError:
                     # Could not acquire lock, skip this interval
                     pass

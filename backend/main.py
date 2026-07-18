@@ -124,19 +124,21 @@ async def lifespan(app: FastAPI):
     # Start WebSocket subscription listener
     manager.start_listener_task()
     
-    # Start periodic agent sync from Wazuh API
-    global sync_agents_task
-    sync_agents_task = asyncio.create_task(_sync_agents_loop())
+    # Start periodic agent sync from Wazuh API only in non-local environments
+    if getattr(settings, "ENV", "development") != "development":
+        global sync_agents_task
+        sync_agents_task = asyncio.create_task(_sync_agents_loop())
 
     # Start polling alerts from API (fallback for Windows) - DISABLED: Wazuh API has no /alerts endpoint
     # global poll_alerts_task
     # poll_alerts_task = asyncio.create_task(_poll_wazuh_alerts_loop())
 
-    # Start periodic Zabbix sync
-    global sync_zabbix_task
-    sync_zabbix_task = asyncio.create_task(_sync_zabbix_loop())
+    # Start periodic Zabbix sync only when enabled
+    if getattr(settings, "ZABBIX_ENABLED", False):
+        global sync_zabbix_task
+        sync_zabbix_task = asyncio.create_task(_sync_zabbix_loop())
 
-    # Start SOAR worker
+    # Start SOAR worker in a non-blocking way
     global soar_worker_task
     soar_worker_task = asyncio.create_task(soar_worker_instance.start())
 
@@ -148,7 +150,7 @@ async def lifespan(app: FastAPI):
     if sync_agents_task:
         sync_agents_task.cancel()
         try:
-            await asyncio.wait_for(asyncio.gather(sync_agents_task, return_exceptions=True), timeout=5.0)
+            await asyncio.wait_for(asyncio.gather(sync_agents_task, return_exceptions=True), timeout=2.0)
         except asyncio.TimeoutError:
             pass
             
@@ -162,14 +164,14 @@ async def lifespan(app: FastAPI):
     if sync_zabbix_task:
         sync_zabbix_task.cancel()
         try:
-            await asyncio.wait_for(asyncio.gather(sync_zabbix_task, return_exceptions=True), timeout=5.0)
+            await asyncio.wait_for(asyncio.gather(sync_zabbix_task, return_exceptions=True), timeout=2.0)
         except asyncio.TimeoutError:
             pass
             
     if soar_worker_task:
         await soar_worker_instance.stop()
         try:
-            await asyncio.wait_for(asyncio.gather(soar_worker_task, return_exceptions=True), timeout=5.0)
+            await asyncio.wait_for(asyncio.gather(soar_worker_task, return_exceptions=True), timeout=2.0)
         except asyncio.TimeoutError:
             pass
     
