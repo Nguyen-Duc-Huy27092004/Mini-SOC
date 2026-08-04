@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShieldAlert, ShieldCheck, Zap, Activity, AlertTriangle, Lock, Unlock, RefreshCw, Radio, Server, Filter } from 'lucide-react';
+import api from '../../../shared/api/client';
 
 interface DDoSSummary {
   engine_status: string;
@@ -48,16 +49,29 @@ export function DdosProtectionPage() {
   const fetchDdosStatus = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/ddos/status');
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data.summary || summary);
-        if (data.blocked_ips) {
-          setBlockedList(data.blocked_ips);
-        }
+      const { data } = await api.get('/ddos/status');
+      // Backend trả flat: { auto_block_enabled, blocked_count, blocked_ips: { ip: {...} } }
+      setSummary(prev => ({
+        ...prev,
+        auto_block_enabled: data.auto_block_enabled ?? prev.auto_block_enabled,
+        currently_blocked_ips_count: data.blocked_count ?? prev.currently_blocked_ips_count,
+      }));
+      if (data.blocked_ips && typeof data.blocked_ips === 'object') {
+        // Convert dict { ip: { blocked_at, attack_type, confidence, ... } } → array
+        const arr: BlockedIpItem[] = Object.entries(data.blocked_ips).map(([ip, info]: [string, any]) => ({
+          ip,
+          blocked_at: info.blocked_at
+            ? new Date(info.blocked_at * 1000).toLocaleTimeString()
+            : new Date().toLocaleTimeString(),
+          vector: info.attack_type || 'Unknown',
+          rps: info.req_count || 0,
+          confidence: Math.round(info.confidence || 100),
+          auto_mitigated: info.attack_type !== 'MANUAL_BLOCK',
+        }));
+        setBlockedList(arr);
       }
     } catch (err) {
-      console.warn('Backend API endpoint unreachable, showing active interface:', err);
+      console.warn('DDoS status endpoint unreachable, showing demo data:', err);
     } finally {
       setLoading(false);
     }
@@ -73,23 +87,19 @@ export function DdosProtectionPage() {
     if (!ip) return;
     setMitigatingIp(ip);
     try {
-      const res = await fetch('/api/v1/ddos/mitigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip, action }),
-      });
-      if (res.ok) {
-        if (action === 'block') {
-          setBlockedList(prev => [
-            { ip, blocked_at: new Date().toLocaleTimeString(), vector: 'Manual Analyst Block', rps: 0, confidence: 100, auto_mitigated: false },
-            ...prev.filter(item => item.ip !== ip)
-          ]);
-        } else {
-          setBlockedList(prev => prev.filter(item => item.ip !== ip));
-        }
+      // Fix: backend expects { source_ip, operation } not { ip, action }
+      await api.post('/ddos/mitigate', { source_ip: ip, operation: action });
+      if (action === 'block') {
+        setBlockedList(prev => [
+          { ip, blocked_at: new Date().toLocaleTimeString(), vector: 'Manual Analyst Block', rps: 0, confidence: 100, auto_mitigated: false },
+          ...prev.filter(item => item.ip !== ip)
+        ]);
+      } else {
+        setBlockedList(prev => prev.filter(item => item.ip !== ip));
       }
     } catch (err) {
       // Local fallback state update for smooth UX
+      console.warn('Mitigate action failed, updating UI locally:', err);
       if (action === 'block') {
         setBlockedList(prev => [
           { ip, blocked_at: new Date().toLocaleTimeString(), vector: 'Manual Analyst Block', rps: 0, confidence: 100, auto_mitigated: false },
