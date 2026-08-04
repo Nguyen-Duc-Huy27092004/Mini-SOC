@@ -12,6 +12,7 @@ from app.api.v1.users import router as users_router
 from app.api.v1.zabbix import router as zabbix_router
 from app.api.v1.wazuh import router as wazuh_router
 from app.api.v1.soar import router as soar_router
+from app.api.v1.ddos import router as ddos_router
 
 api_router = APIRouter()
 
@@ -30,4 +31,7 @@ api_router.include_router(zabbix_router, prefix="/zabbix", tags=["Zabbix"])
 api_router.include_router(wazuh_router, prefix="/wazuh", tags=["Wazuh"])
 # ── SOAR Integration ────────────────────────────────────────────────────────
 api_router.include_router(soar_router, prefix="/soar", tags=["SOAR"])
+# ── Anti-DDoS & IDS/IPS Engine ─────────────────────────────────────────────
+api_router.include_router(ddos_router, prefix="/ddos", tags=["Anti-DDoS"])
+
 
