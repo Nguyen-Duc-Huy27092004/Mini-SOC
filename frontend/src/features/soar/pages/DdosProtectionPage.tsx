@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { ShieldAlert, ShieldCheck, Zap, Activity, AlertTriangle, Lock, Unlock, RefreshCw, Radio, Server, Filter } from 'lucide-react';
-import { toast } from 'react-[#toast]'; // or custom toast alert if available
 
 interface DDoSSummary {
   engine_status: string;
@@ -26,7 +25,6 @@ export function DdosProtectionPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [mitigatingIp, setMitigatingIp] = useState<string>('');
   const [manualIp, setManualIp] = useState<string>('');
-  const [autoBlock, setAutoBlock] = useState<boolean>(true);
   
   // Realtime DDoS State
   const [summary, setSummary] = useState<DDoSSummary>({
