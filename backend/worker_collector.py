@@ -22,6 +22,7 @@ async def main():
         await logger.ainfo("collector_worker_shutting_down")
     except Exception as exc:
         await logger.aerror("collector_worker_crashed", error=str(exc), exc_info=True)
+        await asyncio.sleep(10)
         raise
     finally:
         await close_redis()
