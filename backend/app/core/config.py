@@ -365,7 +365,7 @@ class Settings(BaseSettings):
     @property
     def REDIS_URL(self) -> str:
 
-        if self.REDIS_PASSWORD:
+        if self.REDIS_PASSWORD and self.REDIS_PASSWORD.get_secret_value().strip():
 
             password = (
                 self.REDIS_PASSWORD.get_secret_value()
