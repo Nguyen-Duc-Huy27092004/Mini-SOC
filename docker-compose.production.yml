@@ -165,6 +165,10 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      WAZUH_API_URL: ${WAZUH_API_URL:-https://localhost:55000}
+      WAZUH_API_USER: ${WAZUH_API_USER:-wazuh-wui}
+      WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD:-wazuh}
+      WAZUH_VERIFY_SSL: "false"
       WAZUH_ALERTS_FILE: /var/ossec/logs/alerts/alerts.json
     volumes:
       - ${WAZUH_ALERTS_HOST_PATH:-/var/ossec/logs/alerts}:/var/ossec/logs/alerts:ro

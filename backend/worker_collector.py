@@ -16,22 +16,14 @@ async def main():
     setup_logging()
     await logger.ainfo("collector_worker_starting", env=settings.ENV)
 
-    collector_task = asyncio.create_task(start_collector())
-
     try:
-        # Keep worker alive
-        while True:
-            await asyncio.sleep(3600)
+        await start_collector()
     except asyncio.CancelledError:
-        pass
-    except KeyboardInterrupt:
         await logger.ainfo("collector_worker_shutting_down")
+    except Exception as exc:
+        await logger.aerror("collector_worker_crashed", error=str(exc), exc_info=True)
+        raise
     finally:
-        collector_task.cancel()
-        try:
-            await asyncio.wait_for(asyncio.gather(collector_task, return_exceptions=True), timeout=5.0)
-        except asyncio.TimeoutError:
-            pass
         await close_redis()
         await logger.ainfo("collector_worker_stopped")
 
