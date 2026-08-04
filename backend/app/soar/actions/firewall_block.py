@@ -60,6 +60,27 @@ class FirewallBlockAction(BaseAction):
             return ActionResult(False, f"Firewall action failed: {str(e)}", {"error": str(e), "traceback": traceback.format_exc()})
 
     def _is_whitelisted(self, ip: str) -> bool:
-        """Check if IP belongs to reserved private/loopback whitelist"""
-        whitelisted_prefixes = ("127.", "10.", "172.16.", "192.168.1.1")
-        return any(ip.startswith(prefix) for prefix in whitelisted_prefixes)
+        """
+        Check if IP is on the management whitelist (should NOT be blocked).
+        
+        IMPORTANT: Only loopback addresses are whitelisted by default.
+        Internal/LAN IPs (10.x, 172.x, 192.168.x) are NOT whitelisted
+        because internal hosts can still perform DDoS attacks against servers.
+        
+        To protect specific management IPs, add them to MANAGEMENT_WHITELIST.
+        """
+        import ipaddress
+
+        # Only truly safe addresses that should never be blocked
+        MANAGEMENT_WHITELIST = [
+            ipaddress.ip_network("127.0.0.0/8"),   # Loopback
+            ipaddress.ip_network("::1/128"),         # IPv6 loopback
+        ]
+
+        try:
+            addr = ipaddress.ip_address(ip)
+            return any(addr in net for net in MANAGEMENT_WHITELIST)
+        except ValueError:
+            logger.warn("firewall_block_invalid_ip_format", ip=ip)
+            return False  # Invalid IP → do NOT whitelist, allow block
+

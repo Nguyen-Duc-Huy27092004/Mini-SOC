@@ -181,3 +181,9 @@ class DDoSEngine:
     def get_blocked_ips(self) -> Dict[str, dict]:
         """Return dict of currently blocked IP addresses"""
         return self._blocked_ips
+
+
+# ── Module-level singleton — shared across API router and DDoS middleware ──────
+# Import this instance instead of creating a new DDoSEngine() to ensure
+# all components share the same in-memory tracking state.
+ddos_engine = DDoSEngine(auto_block_enabled=True)

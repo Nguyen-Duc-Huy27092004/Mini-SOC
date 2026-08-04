@@ -16,6 +16,7 @@ from app.core.logging import setup_logging
 from app.core.metrics import setup_metrics
 from app.core.redis_client import close_redis
 from app.middleware.correlation import CorrelationIdMiddleware
+from app.middleware.ddos_middleware import DDoSMiddleware
 from app.collector import start_collector
 from app.websocket.manager import manager
 from app.websocket.routes import router as ws_router
@@ -190,6 +191,10 @@ app = FastAPI(
 )
 
 app.add_middleware(CorrelationIdMiddleware)
+
+# Anti-DDoS & IDS/IPS Middleware — MUST be registered to enable real-time detection
+# This feeds live traffic into DDoSEngine.record_request() on every HTTP request
+app.add_middleware(DDoSMiddleware)
 
 # Security headers middleware
 from app.middleware.security_headers import SecurityHeadersMiddleware

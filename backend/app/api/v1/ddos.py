@@ -2,12 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 
-from app.services.ddos_engine import DDoSEngine
+from app.services.ddos_engine import DDoSEngine, ddos_engine
 
 router = APIRouter()
-
-# Global engine instance
-ddos_engine = DDoSEngine(auto_block_enabled=True)
 
 class DDoSMitigateRequest(BaseModel):
     source_ip: str = Field(..., example="198.51.100.42", description="Target IP address to block or unblock")
