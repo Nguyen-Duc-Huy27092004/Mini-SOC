@@ -20,6 +20,7 @@ import { SoarDashboard } from '../features/soar/pages/SoarDashboard';
 import { PlaybooksPage } from '../features/soar/pages/PlaybooksPage';
 import { RulesPage } from '../features/soar/pages/RulesPage';
 import { ApprovalsPage } from '../features/soar/pages/ApprovalsPage';
+import { DdosProtectionPage } from '../features/soar/pages/DdosProtectionPage';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const ok = useAuthStore(selectIsAuthenticated);
@@ -65,6 +66,8 @@ export function AppRouter() {
 
         {/* SOAR Routes */}
         <Route path="soar" element={<SoarDashboard />} />
+        <Route path="soar/ddos" element={<DdosProtectionPage />} />
+        <Route path="ddos" element={<DdosProtectionPage />} />
         <Route path="soar/playbooks" element={<PlaybooksPage />} />
         <Route path="soar/rules" element={<RulesPage />} />
         <Route path="soar/approvals" element={<ApprovalsPage />} />

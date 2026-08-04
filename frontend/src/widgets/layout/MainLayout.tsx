@@ -27,6 +27,7 @@ const zabbixNav = [
 
 const soarNav = [
   { to: '/soar', label: 'Tổng quan SOAR', icon: LayoutDashboard },
+  { to: '/soar/ddos', label: 'Chống DDoS & IDS/IPS', icon: ShieldAlert },
   { to: '/soar/playbooks', label: 'Quản lý Playbooks', icon: PlaySquare },
   { to: '/soar/rules', label: 'Cấu hình Rules', icon: Workflow },
   { to: '/soar/approvals', label: 'Phê duyệt', icon: CheckSquare },
