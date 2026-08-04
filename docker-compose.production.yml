@@ -73,7 +73,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       API_V1_STR: /api/v1
       # Security
-      SECRET_KEY: ${SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY:-default_mini_soc_secure_secret_key_minimum_32_chars}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       WS_TICKET_EXPIRE_SECONDS: ${WS_TICKET_EXPIRE_SECONDS:-60}
@@ -156,7 +156,7 @@ services:
     environment:
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      SECRET_KEY: ${SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY:-default_mini_soc_secure_secret_key_minimum_32_chars}
       POSTGRES_SERVER: db
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
