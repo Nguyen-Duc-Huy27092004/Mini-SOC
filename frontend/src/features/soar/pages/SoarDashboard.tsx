@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlaySquare, Zap, Clock, XCircle, RefreshCw, ShieldCheck, Workflow } from 'lucide-react';
+import { PlaySquare, Zap, Clock, XCircle, RefreshCw, ShieldCheck, Workflow, Brain, Sparkles, MessageSquare } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import api from '../../../shared/api/client';
 
@@ -27,6 +27,14 @@ interface RunItem {
   trigger_source: string;
 }
 
+interface AiStatus {
+  mode: 'live' | 'simulation';
+  gemini_configured: boolean;
+  gemini_model: string;
+  slack_configured: boolean;
+  telegram_configured: boolean;
+}
+
 export function SoarDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<SoarStats>({
@@ -37,19 +45,22 @@ export function SoarDashboard() {
     pending_approvals: 0,
   });
   const [recentRuns, setRecentRuns] = useState<RunItem[]>([]);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [playbooksRes, runsRes, approvalsRes] = await Promise.allSettled([
+      const [playbooksRes, runsRes, approvalsRes, aiStatusRes] = await Promise.allSettled([
         api.get('/soar/playbooks'),
         api.get('/soar/runs'),
         api.get('/soar/approvals'),
+        api.get('/ai/status'),
       ]);
 
       const playbooks: PlaybookItem[] = playbooksRes.status === 'fulfilled' ? playbooksRes.value.data : [];
       const runs: RunItem[] = runsRes.status === 'fulfilled' ? runsRes.value.data : [];
       const approvals = approvalsRes.status === 'fulfilled' ? approvalsRes.value.data : [];
+      if (aiStatusRes.status === 'fulfilled') setAiStatus(aiStatusRes.value.data);
 
       const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
       const recent = runs.filter(r => new Date(r.started_at).getTime() > cutoff24h);
@@ -138,7 +149,7 @@ export function SoarDashboard() {
       </div>
 
       {/* Quick Nav Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <NavLink
           to="/soar/ddos"
           className="flex items-center gap-4 p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-800/60 hover:border-rose-500/30 transition group"
@@ -175,6 +186,29 @@ export function SoarDashboard() {
           <div>
             <p className="font-semibold text-white text-sm group-hover:text-amber-300 transition">Phê duyệt ({stats.pending_approvals})</p>
             <p className="text-xs text-slate-500 mt-0.5">Xem xét và xử lý các yêu cầu phê duyệt</p>
+          </div>
+        </NavLink>
+
+        {/* AI-SOAR Chat */}
+        <NavLink
+          to="/soar/ai-chat"
+          className="flex items-center gap-4 p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-800/60 hover:border-violet-500/30 transition group relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent pointer-events-none" />
+          <div className="w-10 h-10 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+            <Brain className="w-5 h-5 text-violet-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-white text-sm group-hover:text-violet-300 transition flex items-center gap-1.5">
+              AI SOC Chat
+              {aiStatus?.mode === 'live'
+                ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">LIVE</span>
+                : <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">SIM</span>
+              }
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">
+              {aiStatus?.gemini_configured ? `Gemini ${aiStatus.gemini_model}` : 'Cấu hình API key'}
+            </p>
           </div>
         </NavLink>
       </div>

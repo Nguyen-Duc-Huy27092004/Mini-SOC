@@ -21,6 +21,7 @@ import { PlaybooksPage } from '../features/soar/pages/PlaybooksPage';
 import { RulesPage } from '../features/soar/pages/RulesPage';
 import { ApprovalsPage } from '../features/soar/pages/ApprovalsPage';
 import { DdosProtectionPage } from '../features/soar/pages/DdosProtectionPage';
+import { AiSocChatPage } from '../features/soar/pages/AiSocChatPage';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const ok = useAuthStore(selectIsAuthenticated);
@@ -71,6 +72,7 @@ export function AppRouter() {
         <Route path="soar/playbooks" element={<PlaybooksPage />} />
         <Route path="soar/rules" element={<RulesPage />} />
         <Route path="soar/approvals" element={<ApprovalsPage />} />
+        <Route path="soar/ai-chat" element={<AiSocChatPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

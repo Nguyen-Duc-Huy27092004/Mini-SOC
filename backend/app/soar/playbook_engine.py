@@ -8,6 +8,7 @@ from app.models.soar import SoarPlaybook, SoarRun, SoarLog, SoarApproval
 from app.soar.rule_engine import RuleEngine
 from app.soar.action_engine import ActionEngine
 from app.soar.retry_engine import RetryEngine
+from app.services.notification_service import notification_service
 
 logger = structlog.get_logger()
 
@@ -69,7 +70,20 @@ class PlaybookEngine:
             self.db.add(approval)
             await self.db.commit()
             logger.info("soar_playbook_needs_approval", run_id=str(run.id))
-            return # Pause execution until approved
+
+            # Notify approvers via Slack/Telegram
+            action_names = ", ".join(
+                a.name for a in sorted(playbook.actions, key=lambda x: x.step_order)
+            ) if hasattr(playbook, 'actions') and playbook.actions else "(actions not loaded)"
+            asyncio.create_task(
+                notification_service.send_approval_request(
+                    run_id=run.id,
+                    playbook_name=playbook.name,
+                    action_summary=action_names,
+                    approver_role="SOC Manager",
+                )
+            )
+            return  # Pause execution until approved
 
         # Execute Auto
         await self.execute_run(run.id, playbook, trigger_data)
@@ -135,3 +149,12 @@ class PlaybookEngine:
             run.completed_at = datetime.datetime.now(datetime.timezone.utc)
             await self.db.commit()
             logger.info("soar_run_completed", run_id=str(run.id), status=run.status)
+
+            # Fire-and-forget: notify SOC team after successful run
+            if all_success and trigger_data:
+                asyncio.create_task(
+                    notification_service.send_alert(
+                        {**trigger_data, "soar_run_id": str(run.id), "soar_status": run.status},
+                        channels=["slack", "telegram"],
+                    )
+                )

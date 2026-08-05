@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Bell, ShieldAlert, LogOut, Wifi, WifiOff,
   Briefcase, Wrench, Shield, User, Server, CalendarClock, ListTodo, MailWarning,
-  Workflow, PlaySquare, CheckSquare
+  Workflow, PlaySquare, CheckSquare, Brain
 } from 'lucide-react';
 import { useAuthStore, selectUser } from '../../features/auth/store';
 import { useAlertStore } from '../../features/alerts/store';
@@ -31,6 +31,7 @@ const soarNav = [
   { to: '/soar/playbooks', label: 'Quản lý Playbooks', icon: PlaySquare },
   { to: '/soar/rules', label: 'Cấu hình Rules', icon: Workflow },
   { to: '/soar/approvals', label: 'Phê duyệt', icon: CheckSquare },
+  { to: '/soar/ai-chat', label: 'AI SOC Chat', icon: Brain, accent: true },
 ];
 
 export function MainLayout() {
@@ -130,7 +131,7 @@ export function MainLayout() {
           <div>
             <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Tự động hoá (SOAR)</p>
             <div className="space-y-0.5">
-              {soarNav.map(({ to, label, icon: Icon }) => (
+              {soarNav.map(({ to, label, icon: Icon, accent }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -138,13 +139,20 @@ export function MainLayout() {
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
                       isActive
-                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                        ? accent
+                          ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+                          : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                     }`
                   }
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   {label}
+                  {accent && (
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30 font-semibold leading-none">
+                      AI
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

@@ -301,6 +301,79 @@ class Settings(BaseSettings):
     CSRF_VALIDATE_ORIGIN: bool = False
 
     # =========================================================
+    # FIREWALL API
+    # =========================================================
+
+    # REST API endpoint of the firewall appliance (iptables API, pfSense, FortiGate, etc.)
+    # If not configured, SOAR will use fallback simulation mode.
+    FIREWALL_API_URL: str = "http://localhost:8080/api/v1/firewall"
+
+    FIREWALL_API_TOKEN: SecretStr = Field(default=SecretStr("mock-token"))
+
+    # =========================================================
+    # AI-SOAR — Google Gemini LLM Integration
+    # =========================================================
+
+    # Google Gemini API key. Get from https://aistudio.google.com/
+    # Leave empty to run in offline/simulation mode.
+    GEMINI_API_KEY: SecretStr | None = None
+
+    # Gemini model to use. Flash is fast & cheap; Pro is more capable.
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+
+    # Master switch for AI-SOAR features (analysis, triage, chat, playbook gen)
+    AI_SOAR_ENABLED: bool = True
+
+    # Minimum AI confidence to act on a classification (0.0 – 1.0).
+    # Below this threshold, the alert is passed to human review.
+    AI_TRIAGE_CONFIDENCE_THRESHOLD: float = 0.70
+
+    # If True, AI can suppress false-positive alerts automatically
+    # when confidence >= AI_TRIAGE_CONFIDENCE_THRESHOLD.
+    AI_AUTO_SUPPRESS_FP: bool = False
+
+    # Maximum tokens for AI alert analysis response
+    AI_MAX_TOKENS: int = 2048
+
+    # =========================================================
+    # SLACK NOTIFICATIONS
+    # =========================================================
+
+    # Slack Incoming Webhook URL.
+    # Create at: https://api.slack.com/messaging/webhooks
+    SLACK_WEBHOOK_URL: SecretStr | None = None
+
+    # Default Slack channel for alert notifications (e.g. #soc-alerts)
+    SLACK_CHANNEL: str = "#soc-alerts"
+
+    # Slack Bot Token for interactive message callbacks (approve/reject playbooks)
+    SLACK_BOT_TOKEN: SecretStr | None = None
+
+    # Slack Signing Secret for webhook signature verification
+    SLACK_SIGNING_SECRET: SecretStr | None = None
+
+    # =========================================================
+    # TELEGRAM NOTIFICATIONS
+    # =========================================================
+
+    # Telegram Bot Token. Get from @BotFather.
+    TELEGRAM_BOT_TOKEN: SecretStr | None = None
+
+    # Telegram Chat ID to send alerts to (group or channel).
+    # Use negative IDs for groups, e.g. -100123456789
+    TELEGRAM_CHAT_ID: str = ""
+
+    # =========================================================
+    # DDOS ENGINE — Redis Persistence
+    # =========================================================
+
+    # Redis key prefix for persisting blocked IPs across restarts
+    DDOS_REDIS_KEY_PREFIX: str = "ddos:blocked"
+
+    # Default TTL for blocked IPs in Redis (seconds). Default 24h.
+    DDOS_BLOCK_TTL_SECONDS: int = 86400
+
+    # =========================================================
     # VALIDATORS
     # =========================================================
 
