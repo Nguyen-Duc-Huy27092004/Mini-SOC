@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Bot, Send, User, Loader2, Sparkles, RefreshCw,
-  Copy, CheckCheck, Shield, Zap, MessageSquare,
-  ExternalLink, ChevronDown, PlusCircle, Brain
+  Bot, Send, User, Loader2, Sparkles,
+  Copy, CheckCheck, Zap,
+  ExternalLink, PlusCircle, Brain
 } from 'lucide-react';
 import api from '../../../shared/api/client';
 
@@ -13,12 +13,6 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   actions_executed?: Array<{ action: string; result: string }>;
-  simulation_mode?: boolean;
-}
-
-interface ChatSession {
-  id: string;
-  messages: ChatMessage[];
   simulation_mode?: boolean;
 }
 

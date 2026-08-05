@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlaySquare, Zap, Clock, XCircle, RefreshCw, ShieldCheck, Workflow, Brain, Sparkles, MessageSquare } from 'lucide-react';
+import { PlaySquare, Zap, Clock, XCircle, RefreshCw, ShieldCheck, Workflow, Brain } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import api from '../../../shared/api/client';
 
