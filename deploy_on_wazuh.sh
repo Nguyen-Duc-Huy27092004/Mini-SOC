@@ -201,6 +201,7 @@ if [[ -z "$SMTP_HOST" ]]; then
     SMTP_USER=""
     SMTP_PASSWORD=""
     SMTP_FROM_EMAIL=""
+    NOTIFICATION_TO_EMAILS_JSON="[]"
     log_warn "Email Notifications disabled. You can enable it later in .env.production"
 else
     NOTIFICATION_ENABLED="true"
@@ -208,8 +209,24 @@ else
     SMTP_PORT="${SMTP_PORT:-587}"
     read -rp "  SMTP User       [e.g. you@gmail.com]: " SMTP_USER
     read -rsp "  SMTP Password: " SMTP_PASSWORD; echo ""
+    # Strip whitespace/spaces in case user pasted Google 16-char App Password (e.g. "xxxx hsqb yyyy zzzz")
+    SMTP_PASSWORD="${SMTP_PASSWORD// /}"
     read -rp "  From Email      [default: \$SMTP_USER]: " SMTP_FROM_EMAIL
     SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-$SMTP_USER}"
+    read -rp "  Recipient Email(s) (comma-separated) [default: \$SMTP_USER]: " SMTP_RECIPIENTS
+    SMTP_RECIPIENTS="${SMTP_RECIPIENTS:-$SMTP_USER}"
+
+    # Build JSON array for NOTIFICATION_TO_EMAILS
+    NOTIFICATION_TO_EMAILS_JSON="["
+    IFS=',' read -ra _EMAILS <<< "$SMTP_RECIPIENTS"
+    for _e in "${_EMAILS[@]}"; do
+        _clean=$(echo "$_e" | tr -d ' "')
+        [[ -z "$_clean" ]] && continue
+        [[ "$NOTIFICATION_TO_EMAILS_JSON" != "[" ]] && NOTIFICATION_TO_EMAILS_JSON="${NOTIFICATION_TO_EMAILS_JSON}, "
+        NOTIFICATION_TO_EMAILS_JSON="${NOTIFICATION_TO_EMAILS_JSON}\"${_clean}\""
+    done
+    NOTIFICATION_TO_EMAILS_JSON="${NOTIFICATION_TO_EMAILS_JSON}]"
+
     log_ok "Email Notifications enabled via $SMTP_HOST"
 fi
 
@@ -359,11 +376,13 @@ printf 'ZABBIX_ENABLED=%s\n'                   "$ZABBIX_ENABLED"
 printf '\n'
 printf '# ── Email Notifications ──────────────────────────────────────────\n'
 printf 'NOTIFICATION_ENABLED=%s\n'             "$NOTIFICATION_ENABLED"
-printf 'SMTP_HOST=%s\n'                        "$SMTP_HOST"
+printf 'SMTP_HOST="%s"\n'                      "$SMTP_HOST"
 printf 'SMTP_PORT=%s\n'                        "$SMTP_PORT"
-printf 'SMTP_USER=%s\n'                        "$SMTP_USER"
-printf 'SMTP_PASSWORD=%s\n'                    "$SMTP_PASSWORD"
-printf 'SMTP_FROM=%s\n'                        "$SMTP_FROM_EMAIL"
+printf 'SMTP_USER="%s"\n'                      "$SMTP_USER"
+printf 'SMTP_PASSWORD="%s"\n'                  "$SMTP_PASSWORD"
+printf 'SMTP_FROM="%s"\n'                      "$SMTP_FROM_EMAIL"
+printf 'SMTP_FROM_EMAIL="%s"\n'                "$SMTP_FROM_EMAIL"
+printf 'NOTIFICATION_TO_EMAILS=%s\n'           "$NOTIFICATION_TO_EMAILS_JSON"
 printf '\n'
 printf '# ── Frontend build-time URLs ─────────────────────────────────────\n'
 printf 'VITE_API_URL=http://%s:%s/api/v1\n'   "$SERVER_IP" "$NGINX_PORT"
