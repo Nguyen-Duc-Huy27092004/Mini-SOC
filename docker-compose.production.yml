@@ -117,7 +117,9 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-${SMTP_FROM_EMAIL:-}}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      NOTIFICATION_TO_EMAILS: ${NOTIFICATION_TO_EMAILS:-[]}
       # GeoIP / Observability
       GEOIP_DB_PATH: /usr/share/GeoIP/GeoLite2-City.mmdb
       ENABLE_SENTRY: "false"
