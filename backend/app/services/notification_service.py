@@ -20,6 +20,7 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import smtplib
 import time
@@ -71,6 +72,17 @@ class NotificationService:
     Central notification hub.  Call module-level singleton `notification_service`.
     """
 
+    def __init__(self) -> None:
+        self._cooldowns: Dict[str, float] = {}
+
+    def _is_cooldown(self, key: str, ttl: int = 1800) -> bool:
+        now = time.monotonic()
+        last = self._cooldowns.get(key, 0)
+        return (now - last) < ttl
+
+    def _set_cooldown(self, key: str) -> None:
+        self._cooldowns[key] = time.monotonic()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -96,7 +108,10 @@ class NotificationService:
         dict[str, bool]
             {channel: success} for each attempted channel.
         """
-        channels = channels or ["slack", "telegram"]
+        if channels is None:
+            channels = ["slack", "telegram"]
+            if getattr(settings, "NOTIFICATION_ENABLED", False) and getattr(settings, "NOTIFICATION_TO_EMAILS", None):
+                channels.append("email")
         severity = str(alert_data.get("severity", "info")).lower()
         emoji    = _SEVERITY_EMOJI.get(severity, "⚠️")
 
@@ -200,6 +215,26 @@ class NotificationService:
         results: Dict[str, bool] = {}
         results["slack"]    = await self._post_slack(slack_text, colour=colour)
         results["telegram"] = await self._post_telegram(telegram_text)
+
+        # Automatic email alerting for high/critical security incidents with anti-spam cooldown
+        if getattr(settings, "NOTIFICATION_ENABLED", False) and getattr(settings, "NOTIFICATION_TO_EMAILS", None):
+            cd_key = f"incident:{incident_id}:{update_type}"
+            if not self._is_cooldown(cd_key, ttl=1800):
+                self._set_cooldown(cd_key)
+                incident_data = {
+                    "incident_id": str(incident_id),
+                    "title": title,
+                    "event_type": f"INCIDENT {update_type.upper()}",
+                    "severity": severity.upper(),
+                    "source_ip": details.get("source_ip", "N/A"),
+                    "agent_id": details.get("agent_id", "N/A"),
+                    "rule_id": details.get("rule_id", "N/A"),
+                    "category": details.get("category", "Security Incident"),
+                    "status": details.get("status", "open"),
+                    "description": details.get("description", title),
+                }
+                results["email"] = await self._send_email_alert(incident_data, icon, severity)
+
         return results
 
     # ------------------------------------------------------------------
@@ -329,19 +364,25 @@ class NotificationService:
         if not settings.NOTIFICATION_ENABLED or not settings.NOTIFICATION_TO_EMAILS:
             return True
 
-        attack_type = data.get("attack_type", "UNKNOWN")
-        source_ip   = data.get("source_ip", "N/A")
+        custom_subj = data.get("custom_subject")
+        if custom_subj:
+            subject = custom_subj
+        else:
+            alert_name = data.get("attack_type") or data.get("title") or data.get("event_type") or "Security Alert"
+            source_ip = data.get("source_ip", "N/A")
+            src_str = f" from {source_ip}" if source_ip and source_ip != "N/A" else ""
+            subject = f"{emoji} [Mini-SOC] {severity.upper()} — {alert_name}{src_str}"
 
-        subject = f"{emoji} [Mini-SOC] {severity.upper()} — {attack_type} from {source_ip}"
-        body    = (
-            f"<h2>{emoji} Security Alert — {severity.upper()}</h2>"
-            f"<table border='1' cellpadding='6'>"
+        body = (
+            f"<div style='font-family: Arial, sans-serif; color: #1e293b; max-width: 600px;'>"
+            f"<h2 style='color: #0f172a; margin-bottom: 12px;'>{emoji} Security Alert — {severity.upper()}</h2>"
+            f"<table border='1' cellpadding='8' cellspacing='0' style='border-collapse: collapse; width: 100%; border-color: #cbd5e1; font-size: 13px;'>"
             + "".join(
-                f"<tr><td><b>{k.replace('_',' ').title()}</b></td><td>{v}</td></tr>"
+                f"<tr style='background-color: #f8fafc;'><td style='width: 30%; font-weight: bold; color: #334155;'>{k.replace('_',' ').title()}</td><td style='color: #0f172a;'>{v}</td></tr>"
                 for k, v in data.items()
-                if not k.startswith("_")
+                if not k.startswith("_") and k != "custom_subject"
             )
-            + "</table><br><i>Sent by Mini-SOC AI-SOAR</i>"
+            + "</table><br><p style='font-size: 12px; color: #64748b;'>Sent automatically by Mini-SOC Monitoring & Incident Center</p></div>"
         )
 
         try:
@@ -352,16 +393,20 @@ class NotificationService:
             msg.attach(MIMEText(body, "html"))
 
             smtp_pass = settings.SMTP_PASSWORD.get_secret_value() if settings.SMTP_PASSWORD else ""
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
-                server.ehlo()
-                server.starttls()
-                if settings.SMTP_USER and smtp_pass:
-                    server.login(settings.SMTP_USER, smtp_pass)
-                server.sendmail(
-                    msg["From"],
-                    settings.NOTIFICATION_TO_EMAILS,
-                    msg.as_string(),
-                )
+
+            def _sync_send() -> None:
+                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls()
+                    if settings.SMTP_USER and smtp_pass:
+                        server.login(settings.SMTP_USER, smtp_pass)
+                    server.sendmail(
+                        msg["From"],
+                        settings.NOTIFICATION_TO_EMAILS,
+                        msg.as_string(),
+                    )
+
+            await asyncio.to_thread(_sync_send)
             logger.info("notification_email_sent", to=settings.NOTIFICATION_TO_EMAILS)
             return True
         except Exception as exc:

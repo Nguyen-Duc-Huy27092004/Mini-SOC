@@ -102,6 +102,7 @@ class ZabbixService:
         # Simple in-memory cache as fallback if Redis unavailable
         self._cache: Dict[str, Any] = {}
         self._cache_ts: Dict[str, float] = {}
+        self._alert_cooldowns: Dict[str, float] = {}
 
     def _get_client(self) -> ZabbixClient:
         if self._client is None:
@@ -952,9 +953,192 @@ class ZabbixService:
             await db.commit()
             logger.info("zabbix_sync_to_db_complete", host_count=len(data.get("hosts", [])))
 
+            # Check and dispatch automated alert notifications
+            await self.check_and_dispatch_alerts(db, data)
+
         except Exception as exc:
             await db.rollback()
             logger.exception("zabbix_sync_to_db_error", error=str(exc))
+
+    async def _is_in_cooldown(self, key: str, ttl: int = 3600) -> bool:
+        """Check if an alert is within cooldown period (in-memory or Redis)."""
+        import time
+        now = time.monotonic()
+        last_sent = self._alert_cooldowns.get(key, 0)
+        if (now - last_sent) < ttl:
+            return True
+
+        try:
+            from app.core.redis_client import get_redis
+            redis = await get_redis()
+            if redis is not None:
+                val = await redis.get(f"zabbix:alert_cooldown:{key}")
+                if val is not None:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    async def _set_cooldown(self, key: str, ttl: int = 3600) -> None:
+        """Record an alert timestamp for cooldown prevention."""
+        import time
+        self._alert_cooldowns[key] = time.monotonic()
+        try:
+            from app.core.redis_client import get_redis
+            redis = await get_redis()
+            if redis is not None:
+                await redis.set(f"zabbix:alert_cooldown:{key}", "1", ex=ttl)
+        except Exception:
+            pass
+
+    async def check_and_dispatch_alerts(self, db: AsyncSession, data: Dict[str, Any]) -> None:
+        """Scan snapshot for issues (server down, high CPU/disk, high severity problems) and send email alerts."""
+        try:
+            is_enabled = getattr(settings, "NOTIFICATION_ENABLED", False)
+            raw_recipients = getattr(settings, "NOTIFICATION_TO_EMAILS", [])
+            if not is_enabled or not raw_recipients:
+                return
+
+            if isinstance(raw_recipients, list):
+                recipients = [r.strip() for r in raw_recipients if r and r.strip()]
+            else:
+                recipients = [r.strip() for r in str(raw_recipients).split(",") if r and r.strip()]
+
+            if not recipients:
+                return
+
+            from app.models.zabbix import ZabbixNotification
+            from app.services.zabbix.zabbix_mapper import map_resources
+            from app.services.zabbix.zabbix_email import (
+                notify_server_down,
+                notify_high_cpu,
+                notify_high_disk,
+                notify_high_severity,
+            )
+
+            cpu_threshold = float(getattr(settings, "NOTIFICATION_CPU_THRESHOLD", 90.0))
+            disk_threshold = float(getattr(settings, "NOTIFICATION_DISK_THRESHOLD", 90.0))
+            now_utc = datetime.now(timezone.utc)
+            recipients_str = ", ".join(recipients)
+
+            # 1. Server Down alerts
+            hosts = data.get("hosts", [])
+            for h in hosts:
+                if h.get("status") == "Enabled" and h.get("available_code") == 2:
+                    hid = str(h.get("host_id", ""))
+                    hname = h.get("name", "Unknown Host")
+                    ip = h.get("ip_address") or "N/A"
+                    cd_key = f"server_down:{hid}"
+                    if not await self._is_in_cooldown(cd_key):
+                        success, err = await notify_server_down(hname, ip, recipients)
+                        n = ZabbixNotification(
+                            notification_type="server_down",
+                            hostname=hname,
+                            ip_address=ip,
+                            subject=f"[DISASTER] Server Down: {hname}",
+                            message=f"Host {hname} ({ip}) is reported unavailable/down by Zabbix.",
+                            recipients=recipients_str,
+                            severity="Disaster",
+                            suggested_action="Verify physical/VM status, network connectivity, and Zabbix agent daemon.",
+                            status="sent" if success else "failed",
+                            error_msg=err if not success else None,
+                            sent_at=now_utc,
+                        )
+                        db.add(n)
+                        await db.commit()
+                        await self._set_cooldown(cd_key, ttl=3600)
+                        logger.info("zabbix_auto_alert_dispatched", type="server_down", host=hname, success=success)
+
+            # 2. Resource usage (CPU & Disk)
+            items = data.get("items", [])
+            if items:
+                resources = map_resources(items)
+                for r in resources:
+                    hid = str(r.host_id)
+                    ip = next((h.get("ip_address") for h in hosts if str(h.get("host_id")) == hid), "N/A")
+
+                    # High CPU
+                    if r.cpu_pct is not None and r.cpu_pct >= cpu_threshold:
+                        cd_key = f"high_cpu:{hid}"
+                        if not await self._is_in_cooldown(cd_key):
+                            success, err = await notify_high_cpu(r.host_name, ip, r.cpu_pct, recipients)
+                            n = ZabbixNotification(
+                                notification_type="high_cpu",
+                                hostname=r.host_name,
+                                ip_address=ip,
+                                subject=f"[HIGH] High CPU: {r.host_name} — {r.cpu_pct:.1f}%",
+                                message=f"High CPU utilization detected on {r.host_name}: {r.cpu_pct:.1f}%.",
+                                recipients=recipients_str,
+                                severity="High",
+                                metric_value=r.cpu_pct,
+                                suggested_action=f"CPU is at {r.cpu_pct:.1f}%. Check runaway processes or scale resources.",
+                                status="sent" if success else "failed",
+                                error_msg=err if not success else None,
+                                sent_at=now_utc,
+                            )
+                            db.add(n)
+                            await db.commit()
+                            await self._set_cooldown(cd_key, ttl=3600)
+                            logger.info("zabbix_auto_alert_dispatched", type="high_cpu", host=r.host_name, val=r.cpu_pct, success=success)
+
+                    # High Disk
+                    if r.disk_pct is not None and r.disk_pct >= disk_threshold:
+                        cd_key = f"high_disk:{hid}"
+                        if not await self._is_in_cooldown(cd_key):
+                            success, err = await notify_high_disk(r.host_name, ip, r.disk_pct, recipients)
+                            n = ZabbixNotification(
+                                notification_type="high_disk",
+                                hostname=r.host_name,
+                                ip_address=ip,
+                                subject=f"[HIGH] High Disk: {r.host_name} — {r.disk_pct:.1f}%",
+                                message=f"High Disk utilization detected on {r.host_name}: {r.disk_pct:.1f}%.",
+                                recipients=recipients_str,
+                                severity="High",
+                                metric_value=r.disk_pct,
+                                suggested_action=f"Disk usage is at {r.disk_pct:.1f}%. Purge old log files or expand storage volume.",
+                                status="sent" if success else "failed",
+                                error_msg=err if not success else None,
+                                sent_at=now_utc,
+                            )
+                            db.add(n)
+                            await db.commit()
+                            await self._set_cooldown(cd_key, ttl=3600)
+                            logger.info("zabbix_auto_alert_dispatched", type="high_disk", host=r.host_name, val=r.disk_pct, success=success)
+
+            # 3. High & Disaster Problems
+            problems = data.get("problems", [])
+            for p in problems:
+                prio = p.get("priority", 0)
+                if prio in (4, 5) and not p.get("is_resolved", False) and not p.get("is_suppressed", False):
+                    pid = str(p.get("problem_id") or p.get("event_id") or "")
+                    if not pid:
+                        continue
+                    cd_key = f"problem:{pid}"
+                    if not await self._is_in_cooldown(cd_key):
+                        hname = p.get("host_name", "Unknown Host")
+                        prob_name = p.get("name", "Unknown Problem")
+                        sev_label = p.get("priority_label", "High")
+                        ip = next((h.get("ip_address") for h in hosts if h.get("name") == hname or str(h.get("host_id")) == str(p.get("host_id"))), "N/A")
+                        success, err = await notify_high_severity(hname, ip, prob_name, sev_label, recipients)
+                        n = ZabbixNotification(
+                            notification_type="problem_alert",
+                            hostname=hname,
+                            ip_address=ip,
+                            subject=f"[{sev_label.upper()}] Problem: {hname}",
+                            message=prob_name,
+                            recipients=recipients_str,
+                            severity=sev_label,
+                            status="sent" if success else "failed",
+                            error_msg=err if not success else None,
+                            sent_at=now_utc,
+                        )
+                        db.add(n)
+                        await db.commit()
+                        await self._set_cooldown(cd_key, ttl=3600)
+                        logger.info("zabbix_auto_alert_dispatched", type="problem_alert", host=hname, problem=prob_name, success=success)
+
+        except Exception as exc:
+            logger.exception("zabbix_check_and_dispatch_alerts_failed", error=str(exc))
 
 
 # Singleton instance

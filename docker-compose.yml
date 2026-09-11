@@ -71,6 +71,8 @@ services:
   #     - SMTP_FROM=${SMTP_FROM:-${SMTP_FROM_EMAIL:-}}
   #     - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
   #     - NOTIFICATION_TO_EMAILS=${NOTIFICATION_TO_EMAILS:-[]}
+  #     - NOTIFICATION_CPU_THRESHOLD=${NOTIFICATION_CPU_THRESHOLD:-90.0}
+  #     - NOTIFICATION_DISK_THRESHOLD=${NOTIFICATION_DISK_THRESHOLD:-90.0}
   #   volumes:
   #     - ./backend:/app
   #     - ${WAZUH_ALERTS_HOST_PATH:-./data/wazuh}:/var/ossec/logs/alerts:ro

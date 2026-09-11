@@ -152,9 +152,13 @@ class PlaybookEngine:
 
             # Fire-and-forget: notify SOC team after successful run
             if all_success and trigger_data:
+                channels = ["slack", "telegram"]
+                from app.core.config import settings
+                if getattr(settings, "NOTIFICATION_ENABLED", False) and getattr(settings, "NOTIFICATION_TO_EMAILS", None):
+                    channels.append("email")
                 asyncio.create_task(
                     notification_service.send_alert(
                         {**trigger_data, "soar_run_id": str(run.id), "soar_status": run.status},
-                        channels=["slack", "telegram"],
+                        channels=channels,
                     )
                 )

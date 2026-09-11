@@ -1,6 +1,7 @@
 """SOC correlation: group alerts into incidents."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -51,6 +52,26 @@ class CorrelationEngine:
             existing.updated_at = datetime.now(timezone.utc)
             if event.severity == "critical" and existing.severity != "critical":
                 existing.severity = "critical"
+                try:
+                    from app.services.notification_service import notification_service
+                    asyncio.create_task(
+                        notification_service.send_incident_update(
+                            incident_id=existing.id,
+                            update_type="escalated",
+                            details={
+                                "title": existing.title,
+                                "severity": "critical",
+                                "source_ip": existing.source_ip or "N/A",
+                                "agent_id": existing.agent_id or "N/A",
+                                "rule_id": existing.rule_id or "N/A",
+                                "category": existing.category or "N/A",
+                                "description": existing.description or "",
+                                "status": existing.status,
+                            },
+                        )
+                    )
+                except Exception:
+                    pass
             db.add(existing)
             await self._link_event(existing.id, event.id, db)
             await self._timeline(db, existing.id, "alert_correlated", {"event_id": str(event.id)})
@@ -85,6 +106,30 @@ class CorrelationEngine:
         await self._timeline(db, incident.id, "incident_created", {"correlation_type": correlation_type})
         await db.commit()
         await logger.ainfo("incident_created", incident_id=str(incident.id), type=correlation_type)
+
+        # Dispatch automatic alert notification for High / Critical incidents
+        if incident.severity in ("critical", "high") or (event.rule_level and event.rule_level >= 10):
+            try:
+                from app.services.notification_service import notification_service
+                asyncio.create_task(
+                    notification_service.send_incident_update(
+                        incident_id=incident.id,
+                        update_type="created",
+                        details={
+                            "title": incident.title,
+                            "severity": incident.severity,
+                            "source_ip": incident.source_ip or "N/A",
+                            "agent_id": incident.agent_id or "N/A",
+                            "rule_id": incident.rule_id or "N/A",
+                            "category": incident.category or correlation_type,
+                            "description": incident.description or "",
+                            "status": incident.status,
+                        },
+                    )
+                )
+            except Exception:
+                pass
+
         return incident
 
     def _detect_pattern(self, event: WazuhEvent) -> tuple[Optional[str], str]:
@@ -96,7 +141,7 @@ class CorrelationEngine:
         if event.category in ("network_attack", "web_application_attack") and event.source_ip:
             return "suspicious_scan", f"scan:{event.source_ip}"
 
-        if event.severity in ("critical", "high"):
+        if event.severity in ("critical", "high") or (event.rule_level and event.rule_level >= 10):
             return "alert_burst", f"burst:{event.agent_id}:{event.rule_id}:{event.source_ip or 'na'}"
 
         return None, f"single:{event.event_id}"

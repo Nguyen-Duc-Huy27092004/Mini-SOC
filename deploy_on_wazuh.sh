@@ -202,19 +202,26 @@ if [[ -z "$SMTP_HOST" ]]; then
     SMTP_PASSWORD=""
     SMTP_FROM_EMAIL=""
     NOTIFICATION_TO_EMAILS_JSON="[]"
+    NOTIFICATION_CPU_THRESHOLD="90.0"
+    NOTIFICATION_DISK_THRESHOLD="90.0"
     log_warn "Email Notifications disabled. You can enable it later in .env.production"
 else
     NOTIFICATION_ENABLED="true"
     read -rp "  SMTP Port       [default: 587]: " SMTP_PORT
     SMTP_PORT="${SMTP_PORT:-587}"
     read -rp "  SMTP User       [e.g. you@gmail.com]: " SMTP_USER
-    read -rsp "  SMTP Password: " SMTP_PASSWORD; echo ""
+    log_info "  Tip: For Gmail, use a 16-character App Password from https://myaccount.google.com/apppasswords"
+    read -rsp "  SMTP Password (App Password): " SMTP_PASSWORD; echo ""
     # Strip whitespace/spaces in case user pasted Google 16-char App Password (e.g. "xxxx hsqb yyyy zzzz")
     SMTP_PASSWORD="${SMTP_PASSWORD// /}"
     read -rp "  From Email      [default: \$SMTP_USER]: " SMTP_FROM_EMAIL
     SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-$SMTP_USER}"
     read -rp "  Recipient Email(s) (comma-separated) [default: \$SMTP_USER]: " SMTP_RECIPIENTS
     SMTP_RECIPIENTS="${SMTP_RECIPIENTS:-$SMTP_USER}"
+    read -rp "  CPU Alert Threshold (%) [default: 90.0]: " NOTIFICATION_CPU_THRESHOLD
+    NOTIFICATION_CPU_THRESHOLD="${NOTIFICATION_CPU_THRESHOLD:-90.0}"
+    read -rp "  Disk Alert Threshold (%) [default: 90.0]: " NOTIFICATION_DISK_THRESHOLD
+    NOTIFICATION_DISK_THRESHOLD="${NOTIFICATION_DISK_THRESHOLD:-90.0}"
 
     # Build JSON array for NOTIFICATION_TO_EMAILS
     NOTIFICATION_TO_EMAILS_JSON="["
@@ -227,7 +234,7 @@ else
     done
     NOTIFICATION_TO_EMAILS_JSON="${NOTIFICATION_TO_EMAILS_JSON}]"
 
-    log_ok "Email Notifications enabled via $SMTP_HOST"
+    log_ok "Email Notifications enabled via $SMTP_HOST (Auto alerts: SOAR security & Zabbix infrastructure)"
 fi
 
 # ──── ADMIN USER ────
@@ -383,6 +390,8 @@ printf 'SMTP_PASSWORD="%s"\n'                  "$SMTP_PASSWORD"
 printf 'SMTP_FROM="%s"\n'                      "$SMTP_FROM_EMAIL"
 printf 'SMTP_FROM_EMAIL="%s"\n'                "$SMTP_FROM_EMAIL"
 printf 'NOTIFICATION_TO_EMAILS=%s\n'           "$NOTIFICATION_TO_EMAILS_JSON"
+printf 'NOTIFICATION_CPU_THRESHOLD=%s\n'       "$NOTIFICATION_CPU_THRESHOLD"
+printf 'NOTIFICATION_DISK_THRESHOLD=%s\n'      "$NOTIFICATION_DISK_THRESHOLD"
 printf '\n'
 printf '# ── Frontend build-time URLs ─────────────────────────────────────\n'
 printf 'VITE_API_URL=http://%s:%s/api/v1\n'   "$SERVER_IP" "$NGINX_PORT"
