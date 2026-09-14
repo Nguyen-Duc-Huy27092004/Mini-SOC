@@ -59,11 +59,19 @@ class AlertSuppressionService:
         Returns:
             True  → event is a duplicate/burst/repeated — suppress it
             False → event should be published
+
+        NOTE: Critical and High severity events are NEVER burst-suppressed —
+        only exact duplicates are filtered for them.
         """
         try:
             if await self._is_duplicate(event, db):
                 await logger.ainfo("alert_suppressed_duplicate", event_id=event.event_id)
                 return True
+
+            # Critical/High alerts bypass burst and repeat suppression
+            # so they always reach the notification pipeline.
+            if event.severity in ("critical", "high"):
+                return False
 
             if await self._is_burst(event, db):
                 await logger.ainfo("alert_suppressed_burst", event_id=event.event_id)

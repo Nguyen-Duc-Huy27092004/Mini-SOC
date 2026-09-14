@@ -92,11 +92,14 @@ class PlaybookEngine:
         """
         Executes actions for a given run sequentially.
         """
+        run = None  # Guard: always defined even if dry_run or load fails
+
         if not is_dry_run:
             run = await self.db.get(SoarRun, run_id)
             if not run:
+                logger.warning("soar_run_not_found", run_id=str(run_id))
                 return
-            
+
             run.status = "Running"
             await self.db.commit()
 
@@ -109,12 +112,12 @@ class PlaybookEngine:
 
         for action in actions:
             logger.info("soar_executing_action", run_id=str(run_id) if run_id else "DRY_RUN", action_name=action.name, is_dry_run=is_dry_run)
-            
+
             if is_dry_run:
                 # Simulate success
                 logger.info("soar_dry_run_simulated_action", action_type=action.action_type, config=action.config)
                 continue
-            
+
             # Use retry engine
             result = await RetryEngine.execute_with_retry(
                 ActionEngine.execute_action,
@@ -124,9 +127,9 @@ class PlaybookEngine:
                 config=action.config,
                 trigger_data=trigger_data
             )
-            
-            if not is_dry_run:
-                # Log action
+
+            if run is not None:
+                # Log action result to DB
                 log = SoarLog(
                     run_id=run.id,
                     action_id=action.id,
@@ -141,9 +144,9 @@ class PlaybookEngine:
 
             if not result or not result.success:
                 all_success = False
-                break # Stop execution on first failure
+                break  # Stop execution on first failure
 
-        if not is_dry_run:
+        if not is_dry_run and run is not None:
             import datetime
             run.status = "Success" if all_success else "Failed"
             run.completed_at = datetime.datetime.now(datetime.timezone.utc)

@@ -42,33 +42,44 @@ class SoarWorker:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _subscribe_to_wazuh_alerts(self):
-        """Listens to real-time Wazuh alerts over Redis pub/sub."""
-        try:
-            if self.redis.client is None:
-                await self.redis.initialize()
-        except Exception as e:
-            logger.warning("soar_wazuh_subscribe_skipped", error=str(e))
-            return
+        """Listens to real-time Wazuh alerts over Redis pub/sub.
+        Auto-reconnects on Redis connection loss."""
+        RECONNECT_DELAY = 5.0
 
-        pubsub = self.redis.client.pubsub()
-        await pubsub.subscribe("soc:alerts:realtime")
+        while self.is_running:
+            pubsub = None
+            try:
+                if self.redis.client is None:
+                    await self.redis.initialize()
 
-        logger.info("soar_subscribed_to_wazuh")
-        try:
-            while self.is_running:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                if message and message["type"] == "message":
+                pubsub = self.redis.client.pubsub()
+                await pubsub.subscribe("soc:alerts:realtime")
+                logger.info("soar_subscribed_to_wazuh")
+
+                while self.is_running:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message["type"] == "message":
+                        try:
+                            data = json.loads(message["data"])
+                            async with async_session_maker() as session:
+                                engine = PlaybookEngine(session)
+                                await engine.process_trigger(trigger_source="wazuh", trigger_data=data)
+                        except Exception as e:
+                            logger.error("soar_wazuh_event_error", error=str(e))
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning("soar_wazuh_pubsub_error_reconnecting", error=str(e), delay=RECONNECT_DELAY)
+                self.redis.client = None  # Force reconnect on next iteration
+                await asyncio.sleep(RECONNECT_DELAY)
+            finally:
+                if pubsub:
                     try:
-                        data = json.loads(message["data"])
-                        async with async_session_maker() as session:
-                            engine = PlaybookEngine(session)
-                            await engine.process_trigger(trigger_source="wazuh", trigger_data=data)
-                    except Exception as e:
-                        logger.error("soar_wazuh_event_error", error=str(e))
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await pubsub.unsubscribe("soc:alerts:realtime")
+                        await pubsub.unsubscribe("soc:alerts:realtime")
+                    except Exception:
+                        pass
+
 
     async def _poll_zabbix_problems(self):
         """Polls PostgreSQL for new Zabbix problems periodically."""

@@ -75,7 +75,7 @@ class CorrelationEngine:
             db.add(existing)
             await self._link_event(existing.id, event.id, db)
             await self._timeline(db, existing.id, "alert_correlated", {"event_id": str(event.id)})
-            await db.commit()
+            await db.flush()
             return existing
 
         brute = await self._check_brute_force(event, db)
@@ -104,7 +104,7 @@ class CorrelationEngine:
         await db.flush()
         await self._link_event(incident.id, event.id, db)
         await self._timeline(db, incident.id, "incident_created", {"correlation_type": correlation_type})
-        await db.commit()
+        await db.flush()
         await logger.ainfo("incident_created", incident_id=str(incident.id), type=correlation_type)
 
         # Dispatch automatic alert notification for High / Critical incidents

@@ -5,6 +5,7 @@ Production-grade event normalization pipeline for Mini SOC Portal.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 import uuid
@@ -336,6 +337,18 @@ class EventRouter:
 
                 await correlation_engine.process_event(event, db)
 
+                # ============================================================
+                # DIRECT CRITICAL ALERT EMAIL
+                # Gửi mail cho mọi Wazuh critical event bất kể correlation.
+                # Cooldown 30 phút theo event_id để tránh spam.
+                # ============================================================
+                if event.severity == "critical" or (
+                    event.rule_level and event.rule_level >= 13
+                ):
+                    asyncio.ensure_future(
+                        _send_wazuh_critical_email(event)
+                    )
+
             # ================================================================
             # PUBLISH OUTSIDE TRANSACTION
             # ================================================================
@@ -411,3 +424,70 @@ class EventRouter:
             await db.rollback()
 
             raise
+
+
+# =============================================================================
+# WAZUH CRITICAL DIRECT EMAIL
+# =============================================================================
+
+# In-memory cooldown: key = event_id hoặc rule_id+agent_id, ttl = 1800s
+_critical_email_cooldowns: dict[str, float] = {}
+
+
+async def _send_wazuh_critical_email(event) -> None:
+    """
+    Gửi email ngay cho mọi Wazuh event severity=critical (hoặc rule_level>=13).
+    Không phụ thuộc vào correlation engine có tạo Incident hay không.
+    Cooldown 1800s (30 phút) theo rule_id+agent_id để tránh spam.
+    """
+    try:
+        from app.core.config import settings
+        if not getattr(settings, "NOTIFICATION_ENABLED", False):
+            return
+        if not getattr(settings, "NOTIFICATION_TO_EMAILS", None):
+            return
+
+        # Cooldown key: rule + agent (gộp các event giống nhau liên tiếp)
+        cd_key = f"{event.rule_id}:{event.agent_id}"
+        now = time.monotonic()
+        last = _critical_email_cooldowns.get(cd_key, 0)
+        if now - last < 1800:
+            return
+        _critical_email_cooldowns[cd_key] = now
+
+        # Cleanup expired entries to prevent memory leak (keep dict bounded)
+        expired_keys = [k for k, v in _critical_email_cooldowns.items() if now - v > 3600]
+        for k in expired_keys:
+            del _critical_email_cooldowns[k]
+
+        from app.services.notification_service import notification_service
+        alert_data = {
+            "event_type": "WAZUH CRITICAL ALERT",
+            "severity": (event.severity or "critical").upper(),
+            "rule_id": event.rule_id or "N/A",
+            "rule_level": str(event.rule_level or "N/A"),
+            "description": event.rule_description or "",
+            "agent_id": event.agent_id or "N/A",
+            "agent_name": event.agent_name or "N/A",
+            "source_ip": event.source_ip or "N/A",
+            "category": event.category or "N/A",
+            "timestamp": (
+                event.event_timestamp.isoformat()
+                if event.event_timestamp
+                else datetime.now(timezone.utc).isoformat()
+            ),
+            "custom_subject": (
+                f"\U0001f534 [Mini-SOC] WAZUH CRITICAL \u2014 "
+                f"{event.rule_description[:60] if event.rule_description else 'Alert'}"
+                f" | Agent: {event.agent_name or event.agent_id or 'N/A'}"
+            ),
+        }
+        await notification_service._send_email_alert(alert_data, "\U0001f534", "critical")
+        logger.info(
+            "wazuh_critical_email_sent",
+            rule_id=event.rule_id,
+            agent=event.agent_id,
+            severity=event.severity,
+        )
+    except Exception:
+        logger.warning("wazuh_critical_email_failed", exc_info=True)
